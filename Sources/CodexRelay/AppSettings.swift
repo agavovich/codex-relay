@@ -1,4 +1,5 @@
 import ApplicationServices
+import CoreGraphics
 import Foundation
 import ServiceManagement
 
@@ -14,6 +15,9 @@ final class AppSettings: ObservableObject {
         static let autoOpenRecommendations = "autoOpenRecommendations"
         static let showOnlyWhileCodexRuns = "showOnlyWhileCodexRuns"
         static let compactHUD = "compactHUD"
+        static let attachHUDToDock = "attachHUDToDock"
+        static let detachedHUDOriginX = "detachedHUDOriginX"
+        static let detachedHUDOriginY = "detachedHUDOriginY"
         static let activeTaskDetection = "activeTaskDetection"
 
         static let all = [
@@ -26,6 +30,9 @@ final class AppSettings: ObservableObject {
             autoOpenRecommendations,
             showOnlyWhileCodexRuns,
             compactHUD,
+            attachHUDToDock,
+            detachedHUDOriginX,
+            detachedHUDOriginY,
             activeTaskDetection
         ]
     }
@@ -60,6 +67,9 @@ final class AppSettings: ObservableObject {
     @Published var compactHUD: Bool {
         didSet { defaults.set(compactHUD, forKey: Key.compactHUD) }
     }
+    @Published var attachHUDToDock: Bool {
+        didSet { defaults.set(attachHUDToDock, forKey: Key.attachHUDToDock) }
+    }
     @Published var activeTaskDetection: Bool {
         didSet { defaults.set(activeTaskDetection, forKey: Key.activeTaskDetection) }
     }
@@ -81,6 +91,7 @@ final class AppSettings: ObservableObject {
             Key.autoOpenRecommendations: true,
             Key.showOnlyWhileCodexRuns: false,
             Key.compactHUD: true,
+            Key.attachHUDToDock: true,
             Key.activeTaskDetection: false
         ])
 
@@ -102,6 +113,7 @@ final class AppSettings: ObservableObject {
         autoOpenRecommendations = defaults.bool(forKey: Key.autoOpenRecommendations)
         showOnlyWhileCodexRuns = defaults.bool(forKey: Key.showOnlyWhileCodexRuns)
         compactHUD = defaults.bool(forKey: Key.compactHUD)
+        attachHUDToDock = defaults.bool(forKey: Key.attachHUDToDock)
         activeTaskDetection = defaults.bool(forKey: Key.activeTaskDetection)
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
@@ -151,6 +163,22 @@ final class AppSettings: ObservableObject {
 
     var accessibilityGranted: Bool {
         AXIsProcessTrusted()
+    }
+
+    var detachedHUDOrigin: CGPoint? {
+        guard defaults.object(forKey: Key.detachedHUDOriginX) != nil,
+              defaults.object(forKey: Key.detachedHUDOriginY) != nil else {
+            return nil
+        }
+        return CGPoint(
+            x: defaults.double(forKey: Key.detachedHUDOriginX),
+            y: defaults.double(forKey: Key.detachedHUDOriginY)
+        )
+    }
+
+    func saveDetachedHUDOrigin(_ origin: CGPoint) {
+        defaults.set(origin.x, forKey: Key.detachedHUDOriginX)
+        defaults.set(origin.y, forKey: Key.detachedHUDOriginY)
     }
 
     func displayEmail(_ email: String?) -> String? {

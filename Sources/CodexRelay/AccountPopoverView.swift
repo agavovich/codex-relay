@@ -174,6 +174,15 @@ struct AccountPopoverView: View {
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
 
+                    Toggle("Attach HUD to Dock", isOn: $store.settings.attachHUDToDock)
+
+                    Text(store.settings.attachHUDToDock
+                         ? "Keeps the HUD aligned with the Dock."
+                         : "Drag the HUD to move it anywhere. Its position is saved.")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+
                     Picker("Refresh every", selection: $store.settings.refreshInterval) {
                         ForEach(AppSettings.refreshIntervals, id: \.self) { interval in
                             Text(refreshIntervalTitle(interval)).tag(interval)

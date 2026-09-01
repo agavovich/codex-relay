@@ -37,6 +37,39 @@ final class HUDPresentationState: ObservableObject {
     }
 }
 
+@MainActor
+final class HUDWindowDragHandler {
+    private weak var panel: NSPanel?
+    private let settings: AppSettings
+    private var initialOrigin: NSPoint?
+
+    init(panel: NSPanel, settings: AppSettings) {
+        self.panel = panel
+        self.settings = settings
+    }
+
+    func update(translation: CGSize) {
+        guard !settings.attachHUDToDock, let panel else { return }
+        let origin = initialOrigin ?? panel.frame.origin
+        initialOrigin = origin
+        panel.setFrameOrigin(NSPoint(
+            x: origin.x + translation.width,
+            y: origin.y - translation.height
+        ))
+    }
+
+    func end() {
+        guard !settings.attachHUDToDock, let panel else {
+            initialOrigin = nil
+            return
+        }
+        settings.saveDetachedHUDOrigin(
+            CGPoint(x: panel.frame.minX, y: panel.frame.minY)
+        )
+        initialOrigin = nil
+    }
+}
+
 enum HUDMetrics {
     static let baseHeight: CGFloat = 52
     static let baseCornerRadius: CGFloat = 15
@@ -67,16 +100,19 @@ enum HUDMetrics {
 struct HUDView: View {
     @ObservedObject var store: LimitStore
     @ObservedObject var presentationState: HUDPresentationState
+    let dragHandler: HUDWindowDragHandler
 
     @State private var showingAccounts = false
     @StateObject private var outsideClickMonitor = HUDOutsideClickMonitor()
 
     init(
         store: LimitStore,
-        presentationState: HUDPresentationState
+        presentationState: HUDPresentationState,
+        dragHandler: HUDWindowDragHandler
     ) {
         self.store = store
         self.presentationState = presentationState
+        self.dragHandler = dragHandler
     }
 
     private var isExpanded: Bool {
@@ -97,6 +133,15 @@ struct HUDView: View {
         .onTapGesture {
             showingAccounts.toggle()
         }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 3)
+                .onChanged { value in
+                    dragHandler.update(translation: value.translation)
+                }
+                .onEnded { _ in
+                    dragHandler.end()
+                }
+        )
         .help(store.errorMessage ?? "Codex refreshes every minute")
         .onChange(of: showingAccounts) { isPresented in
             if isPresented {

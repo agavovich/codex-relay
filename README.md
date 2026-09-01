@@ -18,6 +18,8 @@ losing local projects, sessions, or history.
 ## Features
 
 - compact ring or expanded HUD;
+- Dock-attached or freely movable placement with a saved position;
+- automatic hiding over full-screen apps and video;
 - every limit window currently reported by Codex;
 - reset countdowns and available free reset credits;
 - optional low-limit and reset notifications;

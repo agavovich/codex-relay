@@ -81,7 +81,10 @@ enum AccountManagementSelfTest {
         if let defaults = UserDefaults(suiteName: suiteName) {
             let settings = AppSettings(defaults: defaults)
             expect(settings.compactHUD, "compact HUD should be enabled by default")
+            expect(settings.attachHUDToDock, "HUD should attach to the Dock by default")
             settings.compactHUD = false
+            settings.attachHUDToDock = false
+            settings.saveDetachedHUDOrigin(CGPoint(x: 120, y: 80))
             settings.maskEmails = true
             expect(
                 settings.displayEmail("person@example.com") == "p•••@example.com",
@@ -90,6 +93,15 @@ enum AccountManagementSelfTest {
             expect(
                 !AppSettings(defaults: defaults).compactHUD,
                 "HUD layout preference was not persisted"
+            )
+            let restoredSettings = AppSettings(defaults: defaults)
+            expect(
+                !restoredSettings.attachHUDToDock,
+                "HUD attachment preference was not persisted"
+            )
+            expect(
+                restoredSettings.detachedHUDOrigin == CGPoint(x: 120, y: 80),
+                "detached HUD position was not persisted"
             )
             defaults.removePersistentDomain(forName: suiteName)
         } else {
