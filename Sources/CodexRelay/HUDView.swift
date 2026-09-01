@@ -110,6 +110,9 @@ struct HUDView: View {
         .onChange(of: store.accountPopoverRequest) { _ in
             showingAccounts = true
         }
+        .onChange(of: store.activeProfile.id) { _ in
+            showingAccounts = false
+        }
         .onDisappear {
             outsideClickMonitor.stop()
         }

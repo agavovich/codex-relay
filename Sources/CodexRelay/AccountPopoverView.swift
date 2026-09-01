@@ -565,6 +565,7 @@ struct AccountPopoverView: View {
         if store.isCodexRunning {
             requestSwitch(profile, forceRestart: false)
         } else {
+            onSelect()
             store.activateProfileInCodex(profile.id)
         }
     }
@@ -589,6 +590,7 @@ struct AccountPopoverView: View {
                             : "Switch Codex account?"),
                 message: Text(switchMessage(pending)),
                 primaryButton: .default(Text("Switch & Restart")) {
+                    onSelect()
                     store.activateProfileInCodex(
                         pending.profile.id,
                         forceRestart: pending.forceRestart
