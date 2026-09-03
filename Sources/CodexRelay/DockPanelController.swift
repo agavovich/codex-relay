@@ -24,8 +24,8 @@ final class DockPanelController {
     private let edgeStripPanel: NSPanel
     private let screenEdgeInset: CGFloat = 5
     private let edgePanelGap: CGFloat = 6
-    private let edgeSlideDistance: CGFloat = 10
-    private let edgeAnimationDuration: TimeInterval = 0.12
+    private let edgeSlideDistance: CGFloat = 4
+    private let edgeAnimationDuration: TimeInterval = 0.07
     private var placementTimer: Timer?
     private var observers: [NSObjectProtocol] = []
     private var manuallyHidden = false

@@ -76,7 +76,10 @@ final class HUDPresentationState: ObservableObject {
         if let panel { isEdgePanelHovering = panel }
         let hovering = isEdgeHovering
         guard hovering != wasHovering else { return }
-        scheduleEdgeExpansion(expanded: hovering, delay: hovering ? 0.06 : 0.16)
+        // Keep the edge panel feeling attached to the pointer. A tiny enter
+        // debounce filters incidental crossings; the short leave grace period
+        // is only long enough to bridge the gap between the strip and panel.
+        scheduleEdgeExpansion(expanded: hovering, delay: hovering ? 0.01 : 0.045)
     }
 
     func toggleEdgePin() {
@@ -93,7 +96,7 @@ final class HUDPresentationState: ObservableObject {
         if presented {
             setEdgeExpanded(true)
         } else if !isEdgePinned, !isEdgeHovering {
-            scheduleEdgeExpansion(expanded: false, delay: 0.12)
+            scheduleEdgeExpansion(expanded: false, delay: 0.045)
         }
     }
 
@@ -342,19 +345,23 @@ struct HUDView: View {
         edgeContent(size: size)
             .background {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color(red: 0.105, green: 0.11, blue: 0.12).opacity(0.96),
-                                Color(red: 0.075, green: 0.08, blue: 0.09).opacity(0.97)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .fill(.ultraThinMaterial)
                     .overlay {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.75)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.black.opacity(0.20),
+                                        Color.black.opacity(0.31)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.19), lineWidth: 0.75)
                     }
             }
     }
