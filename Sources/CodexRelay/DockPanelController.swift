@@ -9,9 +9,49 @@ private final class FloatingPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-private final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+private class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
+    }
+}
+
+private final class HoverTrackingHostingView<Content: View>: FirstMouseHostingView<Content> {
+    var onHoverChanged: ((Bool) -> Void)?
+    private var hoverTrackingArea: NSTrackingArea?
+    private let verticalInset: CGFloat = 6
+
+    required init(rootView: Content) {
+        super.init(rootView: rootView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+
+        let trackingRect = bounds.insetBy(dx: 0, dy: verticalInset)
+        let area = NSTrackingArea(
+            rect: trackingRect,
+            options: [.mouseEnteredAndExited, .activeAlways],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        hoverTrackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onHoverChanged?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onHoverChanged?(false)
     }
 }
 
@@ -19,6 +59,8 @@ private final class NativeMaterialHostingView<Content: View>: NSView {
     private let effectView = NSVisualEffectView()
     private let hostingView: FirstMouseHostingView<Content>
     private var materialEnabled = false
+    private var hoverTrackingArea: NSTrackingArea?
+    var onHoverChanged: ((Bool) -> Void)?
 
     init(rootView: Content) {
         hostingView = FirstMouseHostingView(rootView: rootView)
@@ -57,6 +99,30 @@ private final class NativeMaterialHostingView<Content: View>: NSView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        hoverTrackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onHoverChanged?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onHoverChanged?(false)
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -171,13 +237,20 @@ final class DockPanelController {
             panel: edgeStripPanel,
             settings: store.settings
         )
-        edgeStripPanel.contentView = FirstMouseHostingView(
+        let edgeStripContentView = HoverTrackingHostingView(
             rootView: EdgeStripView(
                 store: store,
                 presentationState: presentationState,
                 dragHandler: edgeDragHandler
             )
         )
+        edgeStripPanel.contentView = edgeStripContentView
+        panelContentView.onHoverChanged = { [weak self] hovering in
+            self?.handleEdgePanelHover(hovering)
+        }
+        edgeStripContentView.onHoverChanged = { [weak self] hovering in
+            self?.handleEdgeStripHover(hovering)
+        }
         expansionCancellable = presentationState.$isExpanded
             .removeDuplicates()
             .dropFirst()
@@ -281,6 +354,37 @@ final class DockPanelController {
         panel.hasShadow = expanded
         panel.invalidateShadow()
         reposition(animated: true)
+    }
+
+    private func handleEdgeStripHover(_ hovering: Bool) {
+        guard store.settings.hudStyle == .edgeStrip else { return }
+        if hovering {
+            presentationState.setEdgeStripHovering(true)
+            return
+        }
+
+        // Panels touch. Mark the destination first when the pointer crosses
+        // the seam, so the detail window never needs a timing grace period.
+        let panelSeamFrame = panel.frame.insetBy(dx: -0.5, dy: 0)
+        if panel.alphaValue > 0, panelSeamFrame.contains(NSEvent.mouseLocation) {
+            presentationState.setEdgePanelHovering(true)
+        }
+        presentationState.setEdgeStripHovering(false)
+    }
+
+    private func handleEdgePanelHover(_ hovering: Bool) {
+        guard store.settings.hudStyle == .edgeStrip else { return }
+        if hovering {
+            presentationState.setEdgePanelHovering(true)
+            return
+        }
+
+        let stripTrackingFrame = edgeStripPanel.frame
+            .insetBy(dx: -0.5, dy: 6)
+        if stripTrackingFrame.contains(NSEvent.mouseLocation) {
+            presentationState.setEdgeStripHovering(true)
+        }
+        presentationState.setEdgePanelHovering(false)
     }
 
     private func setStyle(_ style: HUDStyle) {

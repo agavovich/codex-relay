@@ -37,7 +37,6 @@ final class HUDPresentationState: ObservableObject {
     private var isEdgeStripHovering = false
     private var isEdgePanelHovering = false
     private var isPopoverPresented = false
-    private var edgeTransitionTask: Task<Void, Never>?
 
     private var isEdgeHovering: Bool {
         isEdgeStripHovering || isEdgePanelHovering
@@ -48,12 +47,7 @@ final class HUDPresentationState: ObservableObject {
         isExpanded = style == .expanded
     }
 
-    deinit {
-        edgeTransitionTask?.cancel()
-    }
-
     func setStyle(_ style: HUDStyle) {
-        edgeTransitionTask?.cancel()
         self.style = style
         isEdgePinned = false
         isEdgeStripHovering = false
@@ -76,20 +70,13 @@ final class HUDPresentationState: ObservableObject {
         if let panel { isEdgePanelHovering = panel }
         let hovering = isEdgeHovering
         guard hovering != wasHovering else { return }
-        edgeTransitionTask?.cancel()
-        if hovering {
-            setEdgeExpanded(true)
-        } else {
-            // One short seam guard lets mouseExited on the strip and
-            // mouseEntered on the adjacent panel settle in the right order.
-            // There is no visible transition animation after this check.
-            scheduleEdgeExpansion(expanded: false, delay: 0.02)
+        if hovering || (!isEdgePinned && !isPopoverPresented) {
+            setEdgeExpanded(hovering)
         }
     }
 
     func toggleEdgePin() {
         guard style == .edgeStrip else { return }
-        edgeTransitionTask?.cancel()
         isEdgePinned.toggle()
         setEdgeExpanded(isEdgePinned || isEdgeHovering || isPopoverPresented)
     }
@@ -97,38 +84,18 @@ final class HUDPresentationState: ObservableObject {
     func setPopoverPresented(_ presented: Bool) {
         isPopoverPresented = presented
         guard style == .edgeStrip else { return }
-        edgeTransitionTask?.cancel()
         if presented {
             setEdgeExpanded(true)
         } else if !isEdgePinned, !isEdgeHovering {
-            scheduleEdgeExpansion(expanded: false, delay: 0.02)
+            setEdgeExpanded(false)
         }
     }
 
     func showExpandedPreview() {
-        edgeTransitionTask?.cancel()
         if style == .edgeStrip {
             setEdgeExpanded(true)
         } else {
             isExpanded = true
-        }
-    }
-
-    private func scheduleEdgeExpansion(expanded: Bool, delay: TimeInterval) {
-        edgeTransitionTask?.cancel()
-        if !expanded, isEdgePinned || isPopoverPresented { return }
-
-        edgeTransitionTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            guard !Task.isCancelled, let self else { return }
-            if expanded {
-                guard self.isEdgeHovering else { return }
-            } else {
-                guard !self.isEdgeHovering, !self.isEdgePinned, !self.isPopoverPresented else {
-                    return
-                }
-            }
-            self.setEdgeExpanded(expanded)
         }
     }
 
@@ -189,7 +156,7 @@ enum HUDMetrics {
     static let brandSectionWidth = brandWidth + sectionInset * 2
     static let baseWidth: CGFloat = brandSectionWidth
         + 2 * (1 + multiWindowWidth + sectionInset * 2)
-    static let edgeCollapsedWidth: CGFloat = 8
+    static let edgeCollapsedWidth: CGFloat = 7
     static let edgePanelWidth: CGFloat = 214
     static let edgePanelHeight: CGFloat = 240
 
@@ -266,9 +233,6 @@ struct HUDView: View {
                     dragHandler.end()
                 }
         )
-        .onHover { hovering in
-            presentationState.setEdgePanelHovering(hovering)
-        }
         .onChange(of: showingAccounts) { isPresented in
             presentationState.setPopoverPresented(isPresented)
             if isPresented {
@@ -737,9 +701,6 @@ struct EdgeStripView: View {
                     dragHandler.end()
                 }
         )
-        .onHover { hovering in
-            presentationState.setEdgeStripHovering(hovering)
-        }
     }
 }
 
