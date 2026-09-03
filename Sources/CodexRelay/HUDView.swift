@@ -33,39 +33,45 @@ final class HUDPresentationState: ObservableObject {
     @Published private(set) var style: HUDStyle
     @Published private(set) var isExpanded: Bool
     @Published private(set) var isEdgePinned = false
+    @Published private(set) var isEdgeChromeVisible: Bool
 
     private var isEdgeHovering = false
     private var isPopoverPresented = false
     private var edgeTransitionTask: Task<Void, Never>?
+    private var edgeChromeTask: Task<Void, Never>?
 
     init(style: HUDStyle) {
         self.style = style
         isExpanded = style == .expanded
+        isEdgeChromeVisible = false
     }
 
     deinit {
         edgeTransitionTask?.cancel()
+        edgeChromeTask?.cancel()
     }
 
     func setStyle(_ style: HUDStyle) {
         edgeTransitionTask?.cancel()
+        edgeChromeTask?.cancel()
         self.style = style
         isEdgePinned = false
         isEdgeHovering = false
         isExpanded = style == .expanded
+        isEdgeChromeVisible = false
     }
 
     func setEdgeHovering(_ hovering: Bool) {
         guard style == .edgeStrip else { return }
         isEdgeHovering = hovering
-        scheduleEdgeExpansion(expanded: hovering, delay: hovering ? 0.16 : 0.42)
+        scheduleEdgeExpansion(expanded: hovering, delay: hovering ? 0.06 : 0.16)
     }
 
     func toggleEdgePin() {
         guard style == .edgeStrip else { return }
         edgeTransitionTask?.cancel()
         isEdgePinned.toggle()
-        isExpanded = isEdgePinned || isEdgeHovering || isPopoverPresented
+        setEdgeExpanded(isEdgePinned || isEdgeHovering || isPopoverPresented)
     }
 
     func setPopoverPresented(_ presented: Bool) {
@@ -73,15 +79,19 @@ final class HUDPresentationState: ObservableObject {
         guard style == .edgeStrip else { return }
         edgeTransitionTask?.cancel()
         if presented {
-            isExpanded = true
+            setEdgeExpanded(true)
         } else if !isEdgePinned, !isEdgeHovering {
-            scheduleEdgeExpansion(expanded: false, delay: 0.25)
+            scheduleEdgeExpansion(expanded: false, delay: 0.12)
         }
     }
 
     func showExpandedPreview() {
         edgeTransitionTask?.cancel()
-        isExpanded = true
+        if style == .edgeStrip {
+            setEdgeExpanded(true)
+        } else {
+            isExpanded = true
+        }
     }
 
     private func scheduleEdgeExpansion(expanded: Bool, delay: TimeInterval) {
@@ -98,7 +108,30 @@ final class HUDPresentationState: ObservableObject {
                     return
                 }
             }
-            self.isExpanded = expanded
+            self.setEdgeExpanded(expanded)
+        }
+    }
+
+    private func setEdgeExpanded(_ expanded: Bool) {
+        edgeChromeTask?.cancel()
+
+        if expanded {
+            isEdgeChromeVisible = true
+            isExpanded = true
+            return
+        }
+
+        isExpanded = false
+        edgeChromeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 280_000_000)
+            guard !Task.isCancelled, let self,
+                  !self.isExpanded,
+                  !self.isEdgePinned,
+                  !self.isEdgeHovering,
+                  !self.isPopoverPresented else {
+                return
+            }
+            self.isEdgeChromeVisible = false
         }
     }
 }
@@ -154,11 +187,9 @@ enum HUDMetrics {
     static let brandSectionWidth = brandWidth + sectionInset * 2
     static let baseWidth: CGFloat = brandSectionWidth
         + 2 * (1 + multiWindowWidth + sectionInset * 2)
-    static let edgeCollapsedWidth: CGFloat = 10
-    static let edgeCollapsedHeight: CGFloat = 112
-    static let edgeExpandedHeight: CGFloat = 72
-    static let edgeAccountWidth: CGFloat = 108
-    static let edgeActionsWidth: CGFloat = 48
+    static let edgeCollapsedWidth: CGFloat = 8
+    static let edgeCollapsedHeight: CGFloat = 256
+    static let edgeExpandedWidth: CGFloat = 244
 
     static func expandedBaseWidth(windowCount: Int) -> CGFloat {
         switch windowCount {
@@ -175,12 +206,8 @@ enum HUDMetrics {
         }
     }
 
-    static func edgeExpandedWidth(windowCount: Int) -> CGFloat {
-        let count = max(1, windowCount)
-        let windowWidth = count == 1 ? singleWindowWidth : multiWindowWidth
-        return edgeAccountWidth
-            + CGFloat(count) * (1 + windowWidth + sectionInset * 2)
-            + edgeActionsWidth
+    static func edgeExpandedHeight(windowCount: Int) -> CGFloat {
+        252 + CGFloat(max(0, windowCount - 1)) * 54
     }
 }
 
@@ -215,7 +242,7 @@ struct HUDView: View {
         GeometryReader { geometry in
             let size = geometry.size
             let cornerRadius = isEdgeStrip
-                ? (isExpanded ? 16 : 6)
+                ? 18
                 : min(
                     size.height / 2,
                     HUDMetrics.baseCornerRadius * size.height / HUDMetrics.baseHeight
@@ -321,13 +348,18 @@ struct HUDView: View {
 
     @ViewBuilder
     private func edgeSurface(size: CGSize, cornerRadius: CGFloat) -> some View {
-        if #available(macOS 26.0, *) {
-            edgeContent(size: size)
-                .glassEffect(.clear, in: EdgeAttachedShape(cornerRadius: cornerRadius))
-                .background { edgeDarkeningLayer(cornerRadius: cornerRadius) }
-        } else {
-            edgeContent(size: size)
-                .background {
+        edgeContent(size: size)
+            .background {
+                if presentationState.isEdgeChromeVisible {
+                    if #available(macOS 26.0, *) {
+                        EdgeAttachedShape(cornerRadius: cornerRadius)
+                            .fill(Color.clear)
+                            .glassEffect(
+                                .clear,
+                                in: EdgeAttachedShape(cornerRadius: cornerRadius)
+                            )
+                            .overlay { edgeDarkeningLayer(cornerRadius: cornerRadius) }
+                    } else {
                     EdgeAttachedShape(cornerRadius: cornerRadius)
                         .fill(.ultraThinMaterial)
                         .overlay { edgeDarkeningLayer(cornerRadius: cornerRadius) }
@@ -335,8 +367,9 @@ struct HUDView: View {
                             EdgeAttachedShape(cornerRadius: cornerRadius)
                                 .stroke(Color.white.opacity(isExpanded ? 0.20 : 0.14), lineWidth: 0.75)
                         }
+                    }
                 }
-        }
+            }
     }
 
     private func standardContent(size: CGSize) -> some View {
@@ -371,71 +404,77 @@ struct HUDView: View {
 
     private func edgeContent(size: CGSize) -> some View {
         ZStack(alignment: .trailing) {
-            if isExpanded {
-                edgeExpandedContent
-                    .transition(.opacity.combined(with: .move(edge: .trailing)))
-            } else {
-                EdgeStripIndicator(
-                    windows: store.snapshot?.displayWindows ?? [],
-                    hasError: store.errorMessage != nil
+            edgeExpandedContent
+                .frame(
+                    width: HUDMetrics.edgeExpandedWidth,
+                    height: HUDMetrics.edgeExpandedHeight(
+                        windowCount: store.snapshot?.displayWindows.count ?? 0
+                    )
                 )
-                .transition(.opacity)
-            }
+                .allowsHitTesting(isExpanded)
+                .accessibilityHidden(!isExpanded)
+
+            EdgeStripIndicator(
+                window: store.snapshot?.preferredHUDWindow,
+                hasError: store.errorMessage != nil
+            )
+            .frame(
+                width: HUDMetrics.edgeCollapsedWidth,
+                height: HUDMetrics.edgeCollapsedHeight
+            )
         }
         .frame(width: size.width, height: size.height, alignment: .trailing)
-        .animation(.easeOut(duration: 0.18), value: isExpanded)
+        .clipped()
     }
 
     private var edgeExpandedContent: some View {
-        HStack(spacing: 0) {
+        VStack(spacing: 11) {
             edgeAccountSummary
-                .frame(width: HUDMetrics.edgeAccountWidth)
+
+            Rectangle()
+                .fill(Color.primary.opacity(0.12))
+                .frame(height: 1)
 
             if let snapshot = store.snapshot, !snapshot.displayWindows.isEmpty {
-                let windows = snapshot.displayWindows
-                ForEach(Array(windows.enumerated()), id: \.offset) { _, window in
-                    separator
-                    LimitCell(
-                        window: window,
-                        now: store.now,
-                        width: windows.count == 1
-                            ? HUDMetrics.singleWindowWidth
-                            : HUDMetrics.multiWindowWidth
-                    )
-                    .frame(
-                        width: (windows.count == 1
-                            ? HUDMetrics.singleWindowWidth
-                            : HUDMetrics.multiWindowWidth)
-                            + HUDMetrics.sectionInset * 2
+                let preferred = snapshot.preferredHUDWindow
+                ForEach(Array(snapshot.displayWindows.enumerated()), id: \.offset) { _, window in
+                    edgeLimitRow(
+                        window,
+                        isPriority: window == preferred
                     )
                 }
             } else {
-                separator
                 loadingState
-                    .padding(.horizontal, HUDMetrics.sectionInset)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
             }
 
-            separator
+            Spacer(minLength: 0)
+
+            Rectangle()
+                .fill(Color.primary.opacity(0.12))
+                .frame(height: 1)
+
             edgeActions
-                .frame(width: HUDMetrics.edgeActionsWidth)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.leading, 15)
+        .padding(.trailing, HUDMetrics.edgeCollapsedWidth + 11)
+        .padding(.vertical, 13)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var edgeAccountSummary: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 9) {
             ZStack {
                 Circle().fill(Color.primary.opacity(0.08))
                 Image(systemName: "person.fill")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
-            .frame(width: 25, height: 25)
+            .frame(width: 30, height: 30)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1.5) {
                 Text(store.activeProfile.displayName)
-                    .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .lineLimit(1)
 
                 HStack(spacing: 4) {
@@ -445,62 +484,125 @@ struct HUDView: View {
                             .foregroundStyle(.mint)
                     }
                 }
-                .font(.system(size: 7.2, weight: .bold, design: .rounded))
+                .font(.system(size: 8, weight: .bold, design: .rounded))
                 .foregroundStyle(.secondary)
 
                 if let recommendation = store.switchRecommendation,
                    let profile = store.profile(for: recommendation.profileID),
                    profile.id != store.activeProfile.id {
                     Text("BEST: \(profile.displayName)")
-                        .font(.system(size: 6.8, weight: .bold, design: .rounded))
+                        .font(.system(size: 7.5, weight: .bold, design: .rounded))
                         .foregroundStyle(.mint)
                         .lineLimit(1)
                 }
             }
+
+            Spacer(minLength: 6)
+
+            Button {
+                presentationState.toggleEdgePin()
+            } label: {
+                Image(systemName: presentationState.isEdgePinned ? "pin.fill" : "pin")
+                    .font(.system(size: 10, weight: .semibold))
+                    .frame(width: 26, height: 26)
+                    .background(Circle().fill(Color.primary.opacity(0.07)))
+            }
+            .buttonStyle(.plain)
+            .help(presentationState.isEdgePinned ? "Unpin panel" : "Keep panel open")
         }
-        .padding(.leading, 11)
-        .padding(.trailing, 8)
-        .frame(maxHeight: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity)
     }
 
     private var edgeActions: some View {
-        VStack(spacing: 3) {
-            HStack(spacing: 3) {
-                edgeActionButton("person.2.fill", help: "Accounts") {
-                    openAccounts()
-                }
-                edgeActionButton("arrow.clockwise", help: "Refresh limits") {
-                    store.refresh()
-                }
+        HStack(spacing: 7) {
+            edgeActionButton("person.2.fill", title: "Accounts") {
+                openAccounts()
             }
-
-            HStack(spacing: 3) {
-                edgeActionButton("gearshape.fill", help: "Settings") {
-                    openSettings()
-                }
-                edgeActionButton(
-                    presentationState.isEdgePinned ? "pin.fill" : "pin",
-                    help: presentationState.isEdgePinned ? "Unpin panel" : "Keep panel open"
-                ) {
-                    presentationState.toggleEdgePin()
-                }
+            edgeActionButton("arrow.clockwise", title: "Refresh") {
+                store.refresh()
+            }
+            edgeActionButton("gearshape.fill", title: "Settings") {
+                openSettings()
             }
         }
+        .frame(maxWidth: .infinity)
     }
 
     private func edgeActionButton(
         _ systemName: String,
-        help: String,
+        title: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 8, weight: .semibold))
-                .frame(width: 17, height: 17)
-                .background(Circle().fill(Color.primary.opacity(0.07)))
+            VStack(spacing: 3) {
+                Image(systemName: systemName)
+                    .font(.system(size: 9, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 7.5, weight: .semibold, design: .rounded))
+            }
+            .frame(maxWidth: .infinity, minHeight: 31)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+            )
         }
         .buttonStyle(.plain)
-        .help(help)
+        .help(title)
+    }
+
+    private func edgeLimitRow(
+        _ window: RateLimitWindow,
+        isPriority: Bool
+    ) -> some View {
+        VStack(spacing: 5) {
+            HStack(alignment: .firstTextBaseline) {
+                HStack(spacing: 5) {
+                    Text(window.displayTitle)
+                    if isPriority {
+                        Text("ACTIVE")
+                            .font(.system(size: 6.5, weight: .bold, design: .rounded))
+                            .foregroundStyle(.mint)
+                    }
+                }
+                .font(.system(size: 8.5, weight: .bold, design: .rounded))
+                .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Text("\(Int(window.remainingPercent.rounded()))%")
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+            }
+
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.primary.opacity(0.12))
+                    Capsule()
+                        .fill(edgeTint(for: window.remainingPercent))
+                        .frame(
+                            width: geometry.size.width
+                                * max(0.025, window.remainingPercent / 100)
+                        )
+                }
+            }
+            .frame(height: 5)
+
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.clockwise")
+                Text(RateLimitCountdown.text(until: window.resetsAt, now: store.now))
+                Spacer()
+            }
+            .font(.system(size: 8.5, weight: .medium, design: .rounded))
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func edgeTint(for remaining: Double) -> Color {
+        switch remaining {
+        case ..<25: return .red
+        case ..<50: return .yellow
+        default: return .white
+        }
     }
 
     private func standardDarkeningLayer(cornerRadius: CGFloat) -> some View {
@@ -522,8 +624,8 @@ struct HUDView: View {
             .fill(
                 LinearGradient(
                     colors: [
-                        Color.black.opacity(isExpanded ? 0.34 : 0.28),
-                        Color.black.opacity(isExpanded ? 0.40 : 0.34)
+                        Color.black.opacity(0.34),
+                        Color.black.opacity(0.40)
                     ],
                     startPoint: .top,
                     endPoint: .bottom
@@ -673,39 +775,32 @@ struct HUDView: View {
 }
 
 private struct EdgeStripIndicator: View {
-    let windows: [RateLimitWindow]
+    let window: RateLimitWindow?
     let hasError: Bool
 
     var body: some View {
-        VStack(spacing: 6) {
-            if windows.isEmpty {
-                Capsule()
-                    .fill(hasError ? Color.red : Color.secondary)
-                    .frame(width: 4, height: 34)
-            } else {
-                ForEach(Array(windows.prefix(2).enumerated()), id: \.offset) { _, window in
-                    GeometryReader { geometry in
-                        ZStack(alignment: .bottom) {
-                            Capsule().fill(Color.primary.opacity(0.16))
-                            Capsule()
-                                .fill(tint(for: window.remainingPercent))
-                                .frame(
-                                    height: geometry.size.height
-                                        * max(0.025, window.remainingPercent / 100)
-                                )
-                        }
-                    }
-                    .frame(width: 4, height: windows.count > 1 ? 42 : 68)
-                    .help(
-                        "\(window.displayTitle): "
-                            + "\(Int(window.remainingPercent.rounded()))% remaining"
-                    )
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Codex limits")
+        let remaining = window?.remainingPercent ?? 0
+        let maximumHeight: CGFloat = 240
+        let visibleHeight = window == nil
+            ? 54
+            : max(24, maximumHeight * remaining / 100)
+
+        return Capsule()
+            .fill(window == nil ? (hasError ? Color.red : Color.secondary) : tint(for: remaining))
+            .frame(width: 8, height: visibleHeight)
+            .shadow(color: Color.black.opacity(0.22), radius: 1.5, x: -0.5, y: 0.5)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .help(
+                window.map {
+                    "\($0.displayTitle): \(Int($0.remainingPercent.rounded()))% remaining"
+                } ?? "Codex limits unavailable"
+            )
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                window.map {
+                    "\($0.displayTitle), \(Int($0.remainingPercent.rounded())) percent remaining"
+                } ?? "Codex limits unavailable"
+            )
     }
 
     private func tint(for remaining: Double) -> Color {

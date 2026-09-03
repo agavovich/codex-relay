@@ -17,7 +17,8 @@ losing local projects, sessions, or history.
 
 ## Features
 
-- three HUD styles: Compact, Expanded, and a hover-revealed Edge Strip;
+- three HUD styles: Compact, Expanded, and a hover-revealed vertical Edge Strip;
+- the Edge Strip shows only the active short limit (or the weekly fallback) until expanded;
 - placement beside the Dock, on the right edge, or anywhere on screen;
 - saved positions for free and right-edge placement;
 - automatic hiding over full-screen apps and video;

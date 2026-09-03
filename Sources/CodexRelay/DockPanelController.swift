@@ -330,12 +330,12 @@ final class DockPanelController {
         if store.settings.hudStyle == .edgeStrip {
             return NSSize(
                 width: presentationState.isExpanded
-                    ? HUDMetrics.edgeExpandedWidth(
-                        windowCount: store.snapshot?.displayWindows.count ?? 0
-                    )
+                    ? HUDMetrics.edgeExpandedWidth
                     : HUDMetrics.edgeCollapsedWidth,
                 height: presentationState.isExpanded
-                    ? HUDMetrics.edgeExpandedHeight
+                    ? HUDMetrics.edgeExpandedHeight(
+                        windowCount: store.snapshot?.displayWindows.count ?? 0
+                    )
                     : HUDMetrics.edgeCollapsedHeight
             )
         }
