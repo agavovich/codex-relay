@@ -53,7 +53,7 @@ final class DockPanelController {
 
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = presentationState.isExpanded
+        panel.hasShadow = presentationState.isExpanded || store.settings.hudStyle == .edgeStrip
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.isMovable = store.settings.hudPlacement != .dock
@@ -216,7 +216,8 @@ final class DockPanelController {
         panel.hasShadow = presentationState.isExpanded
         panel.invalidateShadow()
         if style == .edgeStrip {
-            panel.orderOut(nil)
+            panel.hasShadow = true
+            panel.invalidateShadow()
             repositionEdgeWindows(animated: false)
             if !manuallyHidden {
                 edgeStripPanel.orderFrontRegardless()
@@ -225,6 +226,7 @@ final class DockPanelController {
             edgeStripPanel.orderOut(nil)
             panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.dockWindow)) + 1)
             panel.alphaValue = 1
+            panel.ignoresMouseEvents = false
             reposition(animated: true)
             if !manuallyHidden {
                 panel.orderFrontRegardless()
@@ -424,19 +426,24 @@ final class DockPanelController {
     }
 
     private func showEdgeDetail(at finalFrame: NSRect) {
-        panel.hasShadow = true
         panel.level = NSWindow.Level(rawValue: edgeStripPanel.level.rawValue + 1)
-        panel.alphaValue = 1
         panel.setFrame(finalFrame, display: true)
         if !panel.isVisible {
             panel.orderFrontRegardless()
         }
+        // Keep the window and its material surface alive while collapsed.
+        // Showing it now requires no new WindowServer composition.
+        panel.ignoresMouseEvents = false
+        panel.alphaValue = 1
     }
 
     private func hideEdgeDetail(from finalFrame: NSRect) {
-        panel.orderOut(nil)
-        panel.alphaValue = 1
         panel.setFrame(finalFrame, display: true)
+        panel.ignoresMouseEvents = true
+        panel.alphaValue = 0
+        if !panel.isVisible {
+            panel.orderFrontRegardless()
+        }
     }
 
     private func repositionRightEdge(animated: Bool) {
