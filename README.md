@@ -17,8 +17,9 @@ losing local projects, sessions, or history.
 
 ## Features
 
-- compact ring or expanded HUD;
-- Dock-attached or freely movable placement with a saved position;
+- three HUD styles: Compact, Expanded, and a hover-revealed Edge Strip;
+- placement beside the Dock, on the right edge, or anywhere on screen;
+- saved positions for free and right-edge placement;
 - automatic hiding over full-screen apps and video;
 - every limit window currently reported by Codex;
 - reset countdowns and available free reset credits;

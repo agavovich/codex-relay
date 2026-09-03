@@ -27,6 +27,16 @@ struct AccountPopoverView: View {
     @State private var editedName = ""
     @State private var pendingAlert: AccountPopoverAlert?
 
+    init(
+        store: LimitStore,
+        startsInSettings: Bool = false,
+        onSelect: @escaping () -> Void
+    ) {
+        self.store = store
+        self.onSelect = onSelect
+        _showingSettings = State(initialValue: startsInSettings)
+    }
+
     var body: some View {
         VStack(spacing: 11) {
             header
@@ -165,20 +175,32 @@ struct AccountPopoverView: View {
                 }
 
                 settingsSection("BEHAVIOR") {
-                    Toggle("Use compact HUD", isOn: $store.settings.compactHUD)
+                    Picker("HUD style", selection: Binding(
+                        get: { store.settings.hudStyle },
+                        set: store.settings.setHUDStyle
+                    )) {
+                        ForEach(HUDStyle.allCases) { style in
+                            Text(style.title).tag(style)
+                        }
+                    }
+                    .pickerStyle(.segmented)
 
-                    Text(store.settings.compactHUD
-                         ? "Shows the preferred limit as a ring. Click it to open accounts."
-                         : "Shows the plan and every active limit at all times.")
+                    Text(hudStyleDescription)
                         .font(.system(size: 9))
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Toggle("Attach HUD to Dock", isOn: $store.settings.attachHUDToDock)
+                    Picker("Placement", selection: Binding(
+                        get: { store.settings.hudPlacement },
+                        set: store.settings.setHUDPlacement
+                    )) {
+                        ForEach(HUDPlacement.allCases) { placement in
+                            Text(placement.title).tag(placement)
+                        }
+                    }
+                    .disabled(store.settings.hudStyle == .edgeStrip)
 
-                    Text(store.settings.attachHUDToDock
-                         ? "Keeps the HUD aligned with the Dock."
-                         : "Drag the HUD to move it anywhere. Its position is saved.")
+                    Text(hudPlacementDescription)
                         .font(.system(size: 9))
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -230,6 +252,30 @@ struct AccountPopoverView: View {
             }
         }
         .frame(maxHeight: 430)
+    }
+
+    private var hudStyleDescription: String {
+        switch store.settings.hudStyle {
+        case .compact:
+            return "Shows the preferred limit as a small ring."
+        case .expanded:
+            return "Keeps the plan and every active limit visible."
+        case .edgeStrip:
+            return "A thin edge indicator that reveals controls when you hover."
+        }
+    }
+
+    private var hudPlacementDescription: String {
+        switch store.settings.hudPlacement {
+        case .dock:
+            return "Keeps the HUD aligned beside the Dock."
+        case .rightEdge:
+            return store.settings.hudStyle == .edgeStrip
+                ? "Edge Strip always stays on the right edge. Drag it vertically to reposition it."
+                : "Keeps the HUD on the right edge. Drag it vertically to reposition it."
+        case .free:
+            return "Drag the HUD anywhere. Its position is saved."
+        }
     }
 
     private func settingsSection<Content: View>(

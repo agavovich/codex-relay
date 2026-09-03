@@ -80,28 +80,44 @@ enum AccountManagementSelfTest {
         let suiteName = "local.codex.limit-hud.self-test.\(UUID().uuidString)"
         if let defaults = UserDefaults(suiteName: suiteName) {
             let settings = AppSettings(defaults: defaults)
-            expect(settings.compactHUD, "compact HUD should be enabled by default")
-            expect(settings.attachHUDToDock, "HUD should attach to the Dock by default")
-            settings.compactHUD = false
-            settings.attachHUDToDock = false
+            expect(settings.hudStyle == .compact, "compact HUD should be enabled by default")
+            expect(settings.hudPlacement == .dock, "HUD should attach to the Dock by default")
+            settings.setHUDStyle(.expanded)
+            settings.setHUDPlacement(.free)
             settings.saveDetachedHUDOrigin(CGPoint(x: 120, y: 80))
+            settings.saveEdgeHUDCenterY(440)
             settings.maskEmails = true
             expect(
                 settings.displayEmail("person@example.com") == "p•••@example.com",
                 "email masking is wrong"
             )
             expect(
-                !AppSettings(defaults: defaults).compactHUD,
+                AppSettings(defaults: defaults).hudStyle == .expanded,
                 "HUD layout preference was not persisted"
             )
             let restoredSettings = AppSettings(defaults: defaults)
             expect(
-                !restoredSettings.attachHUDToDock,
+                restoredSettings.hudPlacement == .free,
                 "HUD attachment preference was not persisted"
             )
             expect(
                 restoredSettings.detachedHUDOrigin == CGPoint(x: 120, y: 80),
                 "detached HUD position was not persisted"
+            )
+            expect(
+                restoredSettings.edgeHUDCenterY == 440,
+                "right-edge HUD position was not persisted"
+            )
+
+            restoredSettings.setHUDStyle(.edgeStrip)
+            expect(
+                restoredSettings.hudPlacement == .rightEdge,
+                "Edge Strip should force right-edge placement"
+            )
+            restoredSettings.setHUDStyle(.compact)
+            expect(
+                restoredSettings.hudPlacement == .free,
+                "leaving Edge Strip should restore the previous placement"
             )
             defaults.removePersistentDomain(forName: suiteName)
         } else {

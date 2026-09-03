@@ -25,14 +25,15 @@ final class DockPanelController {
     private var observers: [NSObjectProtocol] = []
     private var manuallyHidden = false
     private var restoredDetachedPosition = false
+    private var restoredRightEdgePosition = false
     private var expansionCancellable: AnyCancellable?
-    private var layoutCancellable: AnyCancellable?
-    private var attachmentCancellable: AnyCancellable?
+    private var styleCancellable: AnyCancellable?
+    private var placementCancellable: AnyCancellable?
 
     init(store: LimitStore) {
         self.store = store
         let presentationState = HUDPresentationState(
-            isExpanded: !store.settings.compactHUD
+            style: store.settings.hudStyle
         )
         self.presentationState = presentationState
 
@@ -53,7 +54,7 @@ final class DockPanelController {
         panel.hasShadow = presentationState.isExpanded
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        panel.isMovable = !store.settings.attachHUDToDock
+        panel.isMovable = store.settings.hudPlacement != .dock
         panel.isMovableByWindowBackground = false
         panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.dockWindow)) + 1)
         // Do not use fullScreenAuxiliary: that behavior intentionally places
@@ -74,17 +75,17 @@ final class DockPanelController {
             .sink { [weak self] expanded in
                 self?.setExpanded(expanded)
             }
-        layoutCancellable = store.settings.$compactHUD
+        styleCancellable = store.settings.$hudStyle
             .removeDuplicates()
             .dropFirst()
-            .sink { [weak presentationState] compact in
-                presentationState?.isExpanded = !compact
+            .sink { [weak self] style in
+                self?.setStyle(style)
             }
-        attachmentCancellable = store.settings.$attachHUDToDock
+        placementCancellable = store.settings.$hudPlacement
             .removeDuplicates()
             .dropFirst()
-            .sink { [weak self] attached in
-                self?.setAttachedToDock(attached)
+            .sink { [weak self] placement in
+                self?.setPlacement(placement)
             }
 
         let notificationCenter = NotificationCenter.default
@@ -141,7 +142,7 @@ final class DockPanelController {
     }
 
     func showExpandedPreview() {
-        presentationState.isExpanded = true
+        presentationState.showExpandedPreview()
     }
 
     private func setExpanded(_ expanded: Bool) {
@@ -150,10 +151,19 @@ final class DockPanelController {
         reposition(animated: true)
     }
 
-    private func setAttachedToDock(_ attached: Bool) {
-        panel.isMovable = !attached
+    private func setStyle(_ style: HUDStyle) {
+        presentationState.setStyle(style)
+        restoredRightEdgePosition = false
+        panel.hasShadow = presentationState.isExpanded
+        panel.invalidateShadow()
+        reposition(animated: true)
+    }
+
+    private func setPlacement(_ placement: HUDPlacement) {
+        panel.isMovable = placement != .dock
         panel.isMovableByWindowBackground = false
         restoredDetachedPosition = false
+        restoredRightEdgePosition = false
         reposition(animated: true)
     }
 
@@ -175,7 +185,10 @@ final class DockPanelController {
     }
 
     func reposition(animated: Bool = false) {
-        if store.settings.attachHUDToDock {
+        if store.settings.hudStyle == .edgeStrip
+            || store.settings.hudPlacement == .rightEdge {
+            repositionRightEdge(animated: animated)
+        } else if store.settings.hudPlacement == .dock {
             repositionAttached(animated: animated)
         } else {
             repositionDetached(animated: animated)
@@ -203,7 +216,7 @@ final class DockPanelController {
         )
         let size = adaptivePanelSize(
             dockThickness: dockThickness,
-            expanded: presentationState.isExpanded,
+            style: store.settings.hudStyle,
             windowCount: store.snapshot?.displayWindows.count ?? 0
         )
         var origin = panel.frame.origin
@@ -232,10 +245,10 @@ final class DockPanelController {
     }
 
     private func repositionDetached(animated: Bool) {
-        let height = max(40, panel.frame.height)
+        let height = HUDMetrics.baseHeight
         let contentScale = min(1.2, height / HUDMetrics.baseHeight)
         let size = NSSize(
-            width: presentationState.isExpanded
+            width: store.settings.hudStyle == .expanded
                 ? HUDMetrics.expandedBaseWidth(
                     windowCount: store.snapshot?.displayWindows.count ?? 0
                 ) * contentScale
@@ -267,9 +280,73 @@ final class DockPanelController {
     }
 
     private func saveDetachedPositionIfNeeded() {
-        guard !store.settings.attachHUDToDock, restoredDetachedPosition else { return }
-        store.settings.saveDetachedHUDOrigin(
-            CGPoint(x: panel.frame.minX, y: panel.frame.minY)
+        switch store.settings.hudPlacement {
+        case .dock:
+            return
+        case .free:
+            guard restoredDetachedPosition else { return }
+            store.settings.saveDetachedHUDOrigin(
+                CGPoint(x: panel.frame.minX, y: panel.frame.minY)
+            )
+        case .rightEdge:
+            guard restoredRightEdgePosition else { return }
+            store.settings.saveEdgeHUDCenterY(panel.frame.midY)
+        }
+    }
+
+    private func repositionRightEdge(animated: Bool) {
+        guard let screen = preferredScreen() else { return }
+
+        let size = rightEdgePanelSize()
+        let visibleFrame = screen.visibleFrame
+        let initialCenterY: CGFloat
+        if restoredRightEdgePosition {
+            initialCenterY = panel.frame.midY
+        } else {
+            initialCenterY = store.settings.edgeHUDCenterY ?? visibleFrame.midY
+            restoredRightEdgePosition = true
+        }
+
+        let halfHeight = size.height / 2
+        let centerY = min(
+            max(initialCenterY, visibleFrame.minY + halfHeight + screenEdgeInset),
+            visibleFrame.maxY - halfHeight - screenEdgeInset
+        )
+        let touchesEdge = store.settings.hudStyle == .edgeStrip
+        let trailingInset: CGFloat = touchesEdge ? 0 : screenEdgeInset
+        let targetFrame = NSRect(
+            x: screen.frame.maxX - size.width - trailingInset,
+            y: centerY - halfHeight,
+            width: size.width,
+            height: size.height
+        )
+
+        if !panel.frame.nearlyEquals(targetFrame) {
+            panel.setFrame(targetFrame, display: true, animate: animated)
+        }
+    }
+
+    private func rightEdgePanelSize() -> NSSize {
+        if store.settings.hudStyle == .edgeStrip {
+            return NSSize(
+                width: presentationState.isExpanded
+                    ? HUDMetrics.edgeExpandedWidth(
+                        windowCount: store.snapshot?.displayWindows.count ?? 0
+                    )
+                    : HUDMetrics.edgeCollapsedWidth,
+                height: presentationState.isExpanded
+                    ? HUDMetrics.edgeExpandedHeight
+                    : HUDMetrics.edgeCollapsedHeight
+            )
+        }
+
+        return NSSize(
+            width: store.settings.hudStyle == .expanded
+                ? HUDMetrics.expandedBaseWidth(
+                    windowCount: store.snapshot?.displayWindows.count ?? 0
+                )
+                : HUDMetrics.baseHeight,
+            height: HUDMetrics.baseHeight
         )
     }
 
@@ -303,7 +380,7 @@ final class DockPanelController {
 
     private func adaptivePanelSize(
         dockThickness: CGFloat,
-        expanded: Bool,
+        style: HUDStyle,
         windowCount: Int
     ) -> NSSize {
         // Keep the top aligned with the work-area edge while mirroring the
@@ -312,7 +389,7 @@ final class DockPanelController {
         let contentScale = min(1.2, height / HUDMetrics.baseHeight)
 
         return NSSize(
-            width: expanded
+            width: style == .expanded
                 ? HUDMetrics.expandedBaseWidth(windowCount: windowCount) * contentScale
                 : height,
             height: height

@@ -3,6 +3,38 @@ import CoreGraphics
 import Foundation
 import ServiceManagement
 
+enum HUDStyle: String, CaseIterable, Identifiable {
+    case compact
+    case expanded
+    case edgeStrip
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .compact: return "Compact"
+        case .expanded: return "Expanded"
+        case .edgeStrip: return "Edge Strip"
+        }
+    }
+}
+
+enum HUDPlacement: String, CaseIterable, Identifiable {
+    case dock
+    case rightEdge
+    case free
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .dock: return "Beside Dock"
+        case .rightEdge: return "Right Edge"
+        case .free: return "Free"
+        }
+    }
+}
+
 @MainActor
 final class AppSettings: ObservableObject {
     private enum Key {
@@ -16,8 +48,12 @@ final class AppSettings: ObservableObject {
         static let showOnlyWhileCodexRuns = "showOnlyWhileCodexRuns"
         static let compactHUD = "compactHUD"
         static let attachHUDToDock = "attachHUDToDock"
+        static let hudStyle = "hudStyle"
+        static let hudPlacement = "hudPlacement"
+        static let previousHUDPlacement = "previousHUDPlacement"
         static let detachedHUDOriginX = "detachedHUDOriginX"
         static let detachedHUDOriginY = "detachedHUDOriginY"
+        static let edgeHUDCenterY = "edgeHUDCenterY"
         static let activeTaskDetection = "activeTaskDetection"
 
         static let all = [
@@ -31,8 +67,12 @@ final class AppSettings: ObservableObject {
             showOnlyWhileCodexRuns,
             compactHUD,
             attachHUDToDock,
+            hudStyle,
+            hudPlacement,
+            previousHUDPlacement,
             detachedHUDOriginX,
             detachedHUDOriginY,
+            edgeHUDCenterY,
             activeTaskDetection
         ]
     }
@@ -64,12 +104,8 @@ final class AppSettings: ObservableObject {
     @Published var showOnlyWhileCodexRuns: Bool {
         didSet { defaults.set(showOnlyWhileCodexRuns, forKey: Key.showOnlyWhileCodexRuns) }
     }
-    @Published var compactHUD: Bool {
-        didSet { defaults.set(compactHUD, forKey: Key.compactHUD) }
-    }
-    @Published var attachHUDToDock: Bool {
-        didSet { defaults.set(attachHUDToDock, forKey: Key.attachHUDToDock) }
-    }
+    @Published private(set) var hudStyle: HUDStyle
+    @Published private(set) var hudPlacement: HUDPlacement
     @Published var activeTaskDetection: Bool {
         didSet { defaults.set(activeTaskDetection, forKey: Key.activeTaskDetection) }
     }
@@ -77,10 +113,25 @@ final class AppSettings: ObservableObject {
     @Published private(set) var settingsError: String?
 
     private let defaults: UserDefaults
+    private var previousHUDPlacement: HUDPlacement
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         Self.migrateLegacyDefaultsIfNeeded(in: defaults)
+
+        let storedStyle = defaults.string(forKey: Key.hudStyle).flatMap(HUDStyle.init(rawValue:))
+        let legacyCompact = (defaults.object(forKey: Key.compactHUD) as? Bool) ?? true
+        let initialStyle = storedStyle ?? (legacyCompact ? .compact : .expanded)
+
+        let storedPlacement = defaults.string(forKey: Key.hudPlacement)
+            .flatMap(HUDPlacement.init(rawValue:))
+        let legacyAttached = (defaults.object(forKey: Key.attachHUDToDock) as? Bool) ?? true
+        let migratedPlacement = storedPlacement ?? (legacyAttached ? .dock : .free)
+        let storedPreviousPlacement = defaults.string(forKey: Key.previousHUDPlacement)
+            .flatMap(HUDPlacement.init(rawValue:))
+        let initialPreviousPlacement = storedPreviousPlacement
+            ?? (migratedPlacement == .rightEdge ? .dock : migratedPlacement)
+
         defaults.register(defaults: [
             Key.maskEmails: false,
             Key.notificationsEnabled: false,
@@ -94,6 +145,10 @@ final class AppSettings: ObservableObject {
             Key.attachHUDToDock: true,
             Key.activeTaskDetection: false
         ])
+
+        hudStyle = initialStyle
+        hudPlacement = initialStyle == .edgeStrip ? .rightEdge : migratedPlacement
+        previousHUDPlacement = initialPreviousPlacement
 
         maskEmails = defaults.bool(forKey: Key.maskEmails)
         notificationsEnabled = defaults.bool(forKey: Key.notificationsEnabled)
@@ -112,10 +167,9 @@ final class AppSettings: ObservableObject {
 
         autoOpenRecommendations = defaults.bool(forKey: Key.autoOpenRecommendations)
         showOnlyWhileCodexRuns = defaults.bool(forKey: Key.showOnlyWhileCodexRuns)
-        compactHUD = defaults.bool(forKey: Key.compactHUD)
-        attachHUDToDock = defaults.bool(forKey: Key.attachHUDToDock)
         activeTaskDetection = defaults.bool(forKey: Key.activeTaskDetection)
         launchAtLogin = SMAppService.mainApp.status == .enabled
+        persistHUDConfiguration()
     }
 
     private static func migrateLegacyDefaultsIfNeeded(in defaults: UserDefaults) {
@@ -137,6 +191,38 @@ final class AppSettings: ObservableObject {
 
     func setNotificationsEnabled(_ enabled: Bool) {
         notificationsEnabled = enabled
+    }
+
+    func setHUDStyle(_ style: HUDStyle) {
+        guard style != hudStyle else { return }
+
+        if style == .edgeStrip {
+            previousHUDPlacement = hudPlacement
+            hudPlacement = .rightEdge
+        } else if hudStyle == .edgeStrip {
+            hudPlacement = previousHUDPlacement
+        }
+
+        hudStyle = style
+        persistHUDConfiguration()
+    }
+
+    func setHUDPlacement(_ placement: HUDPlacement) {
+        guard hudStyle != .edgeStrip, placement != hudPlacement else { return }
+        hudPlacement = placement
+        previousHUDPlacement = placement
+        persistHUDConfiguration()
+    }
+
+    private func persistHUDConfiguration() {
+        defaults.set(hudStyle.rawValue, forKey: Key.hudStyle)
+        defaults.set(hudPlacement.rawValue, forKey: Key.hudPlacement)
+        defaults.set(previousHUDPlacement.rawValue, forKey: Key.previousHUDPlacement)
+
+        // Keep the legacy values current so downgrading does not unexpectedly
+        // reset an existing user's layout.
+        defaults.set(hudStyle == .compact, forKey: Key.compactHUD)
+        defaults.set(hudPlacement == .dock, forKey: Key.attachHUDToDock)
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {
@@ -179,6 +265,15 @@ final class AppSettings: ObservableObject {
     func saveDetachedHUDOrigin(_ origin: CGPoint) {
         defaults.set(origin.x, forKey: Key.detachedHUDOriginX)
         defaults.set(origin.y, forKey: Key.detachedHUDOriginY)
+    }
+
+    var edgeHUDCenterY: CGFloat? {
+        guard defaults.object(forKey: Key.edgeHUDCenterY) != nil else { return nil }
+        return defaults.double(forKey: Key.edgeHUDCenterY)
+    }
+
+    func saveEdgeHUDCenterY(_ centerY: CGFloat) {
+        defaults.set(centerY, forKey: Key.edgeHUDCenterY)
     }
 
     func displayEmail(_ email: String?) -> String? {
