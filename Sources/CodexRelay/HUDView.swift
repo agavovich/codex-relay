@@ -781,13 +781,17 @@ private struct EdgeStripIndicator: View {
     var body: some View {
         let remaining = window?.remainingPercent ?? 0
         let maximumHeight: CGFloat = 240
-        let visibleHeight = window == nil
-            ? 54
-            : max(24, maximumHeight * remaining / 100)
+        let fillHeight = max(5, maximumHeight * remaining / 100)
 
-        return Capsule()
-            .fill(window == nil ? (hasError ? Color.red : Color.secondary) : tint(for: remaining))
-            .frame(width: 8, height: visibleHeight)
+        return ZStack(alignment: .bottom) {
+            Capsule()
+                .fill(Color.primary.opacity(0.22))
+
+            Capsule()
+                .fill(window == nil ? (hasError ? Color.red : Color.secondary) : tint(for: remaining))
+                .frame(height: window == nil ? 36 : fillHeight)
+        }
+            .frame(width: 7, height: maximumHeight)
             .shadow(color: Color.black.opacity(0.22), radius: 1.5, x: -0.5, y: 0.5)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             .help(
