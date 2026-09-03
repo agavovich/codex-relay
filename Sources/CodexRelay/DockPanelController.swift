@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import CoreGraphics
+import QuartzCore
 import SwiftUI
 
 private final class FloatingPanel: NSPanel {
@@ -20,7 +21,11 @@ final class DockPanelController {
 
     private let store: LimitStore
     private let presentationState: HUDPresentationState
+    private let edgeStripPanel: NSPanel
     private let screenEdgeInset: CGFloat = 5
+    private let edgePanelGap: CGFloat = 6
+    private let edgeSlideDistance: CGFloat = 10
+    private let edgeAnimationDuration: TimeInterval = 0.12
     private var placementTimer: Timer?
     private var observers: [NSObjectProtocol] = []
     private var manuallyHidden = false
@@ -29,6 +34,8 @@ final class DockPanelController {
     private var expansionCancellable: AnyCancellable?
     private var styleCancellable: AnyCancellable?
     private var placementCancellable: AnyCancellable?
+    private var edgeAnimationRevision = 0
+    private var edgeAnimationEndsAt = Date.distantPast
 
     init(store: LimitStore) {
         self.store = store
@@ -61,12 +68,46 @@ final class DockPanelController {
         // the HUD above full-screen video and other full-screen apps.
         panel.collectionBehavior = [.moveToActiveSpace, .ignoresCycle]
         self.panel = panel
+
+        let edgeStripPanel = FloatingPanel(
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: HUDMetrics.edgeCollapsedWidth,
+                height: HUDMetrics.edgePanelHeight
+            ),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        edgeStripPanel.isOpaque = false
+        edgeStripPanel.backgroundColor = .clear
+        edgeStripPanel.hasShadow = false
+        edgeStripPanel.hidesOnDeactivate = false
+        edgeStripPanel.isReleasedWhenClosed = false
+        edgeStripPanel.isMovable = true
+        edgeStripPanel.isMovableByWindowBackground = false
+        edgeStripPanel.level = panel.level
+        edgeStripPanel.collectionBehavior = [.moveToActiveSpace, .ignoresCycle]
+        self.edgeStripPanel = edgeStripPanel
+
         let dragHandler = HUDWindowDragHandler(panel: panel, settings: store.settings)
         panel.contentView = FirstMouseHostingView(
             rootView: HUDView(
                 store: store,
                 presentationState: presentationState,
                 dragHandler: dragHandler
+            )
+        )
+        let edgeDragHandler = HUDWindowDragHandler(
+            panel: edgeStripPanel,
+            settings: store.settings
+        )
+        edgeStripPanel.contentView = FirstMouseHostingView(
+            rootView: EdgeStripView(
+                store: store,
+                presentationState: presentationState,
+                dragHandler: edgeDragHandler
             )
         )
         expansionCancellable = presentationState.$isExpanded
@@ -116,6 +157,21 @@ final class DockPanelController {
                 Task { @MainActor in self?.saveDetachedPositionIfNeeded() }
             }
         )
+        observers.append(
+            notificationCenter.addObserver(
+                forName: NSWindow.didMoveNotification,
+                object: edgeStripPanel,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.store.settings.saveEdgeHUDCenterY(self.edgeStripPanel.frame.midY)
+                    if self.presentationState.isExpanded {
+                        self.repositionEdgeWindows(animated: false)
+                    }
+                }
+            }
+        )
 
         placementTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.updateVisibilityAndPosition() }
@@ -135,10 +191,14 @@ final class DockPanelController {
     func hide() {
         manuallyHidden = true
         panel.orderOut(nil)
+        edgeStripPanel.orderOut(nil)
     }
 
     func toggle() {
-        panel.isVisible ? hide() : show()
+        let isVisible = store.settings.hudStyle == .edgeStrip
+            ? edgeStripPanel.isVisible
+            : panel.isVisible
+        isVisible ? hide() : show()
     }
 
     func showExpandedPreview() {
@@ -146,6 +206,10 @@ final class DockPanelController {
     }
 
     private func setExpanded(_ expanded: Bool) {
+        if store.settings.hudStyle == .edgeStrip {
+            repositionEdgeWindows(animated: true)
+            return
+        }
         panel.hasShadow = expanded
         panel.invalidateShadow()
         reposition(animated: true)
@@ -156,7 +220,21 @@ final class DockPanelController {
         restoredRightEdgePosition = false
         panel.hasShadow = presentationState.isExpanded
         panel.invalidateShadow()
-        reposition(animated: true)
+        if style == .edgeStrip {
+            panel.orderOut(nil)
+            repositionEdgeWindows(animated: false)
+            if !manuallyHidden {
+                edgeStripPanel.orderFrontRegardless()
+            }
+        } else {
+            edgeStripPanel.orderOut(nil)
+            panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.dockWindow)) + 1)
+            panel.alphaValue = 1
+            reposition(animated: true)
+            if !manuallyHidden {
+                panel.orderFrontRegardless()
+            }
+        }
     }
 
     private func setPlacement(_ placement: HUDPlacement) {
@@ -171,13 +249,24 @@ final class DockPanelController {
         guard !manuallyHidden else { return }
         if store.settings.showOnlyWhileCodexRuns, !store.isCodexRunning {
             panel.orderOut(nil)
+            edgeStripPanel.orderOut(nil)
             return
         }
         if isFrontmostAppFullScreenOnHUDScreen() {
             panel.orderOut(nil)
+            edgeStripPanel.orderOut(nil)
             return
         }
 
+        if store.settings.hudStyle == .edgeStrip {
+            repositionEdgeWindows(animated: false)
+            if !edgeStripPanel.isVisible {
+                edgeStripPanel.orderFrontRegardless()
+            }
+            return
+        }
+
+        edgeStripPanel.orderOut(nil)
         reposition()
         if !panel.isVisible {
             panel.orderFrontRegardless()
@@ -185,8 +274,9 @@ final class DockPanelController {
     }
 
     func reposition(animated: Bool = false) {
-        if store.settings.hudStyle == .edgeStrip
-            || store.settings.hudPlacement == .rightEdge {
+        if store.settings.hudStyle == .edgeStrip {
+            repositionEdgeWindows(animated: animated)
+        } else if store.settings.hudPlacement == .rightEdge {
             repositionRightEdge(animated: animated)
         } else if store.settings.hudPlacement == .dock {
             repositionAttached(animated: animated)
@@ -290,7 +380,129 @@ final class DockPanelController {
             )
         case .rightEdge:
             guard restoredRightEdgePosition else { return }
-            store.settings.saveEdgeHUDCenterY(panel.frame.midY)
+            store.settings.saveEdgeHUDCenterY(
+                store.settings.hudStyle == .edgeStrip
+                    ? edgeStripPanel.frame.midY
+                    : panel.frame.midY
+            )
+        }
+    }
+
+    private func repositionEdgeWindows(animated: Bool) {
+        guard let screen = preferredScreen() else { return }
+
+        let visibleFrame = screen.visibleFrame
+        let halfHeight = HUDMetrics.edgePanelHeight / 2
+        let requestedCenterY: CGFloat
+        if restoredRightEdgePosition {
+            requestedCenterY = edgeStripPanel.frame.midY
+        } else {
+            requestedCenterY = store.settings.edgeHUDCenterY ?? visibleFrame.midY
+            restoredRightEdgePosition = true
+        }
+        let centerY = min(
+            max(requestedCenterY, visibleFrame.minY + halfHeight + screenEdgeInset),
+            visibleFrame.maxY - halfHeight - screenEdgeInset
+        )
+        let stripFrame = NSRect(
+            x: screen.frame.maxX - HUDMetrics.edgeCollapsedWidth,
+            y: centerY - halfHeight,
+            width: HUDMetrics.edgeCollapsedWidth,
+            height: HUDMetrics.edgePanelHeight
+        )
+        let detailFrame = NSRect(
+            x: stripFrame.minX - edgePanelGap - HUDMetrics.edgePanelWidth,
+            y: stripFrame.minY,
+            width: HUDMetrics.edgePanelWidth,
+            height: HUDMetrics.edgePanelHeight
+        )
+
+        if !edgeStripPanel.frame.nearlyEquals(stripFrame) {
+            edgeStripPanel.setFrame(stripFrame, display: true)
+        }
+
+        if presentationState.isExpanded {
+            showEdgeDetail(at: detailFrame, animated: animated)
+        } else {
+            hideEdgeDetail(from: detailFrame, animated: animated)
+        }
+    }
+
+    private func showEdgeDetail(at finalFrame: NSRect, animated: Bool) {
+        edgeAnimationRevision += 1
+        let revision = edgeAnimationRevision
+        let wasVisible = panel.isVisible
+        panel.hasShadow = true
+        panel.level = NSWindow.Level(rawValue: edgeStripPanel.level.rawValue + 1)
+
+        if !wasVisible {
+            panel.alphaValue = animated ? 0 : 1
+            panel.setFrame(
+                animated ? finalFrame.offsetBy(dx: edgeSlideDistance, dy: 0) : finalFrame,
+                display: true
+            )
+            panel.orderFrontRegardless()
+        }
+
+        guard animated else {
+            panel.alphaValue = 1
+            panel.setFrame(finalFrame, display: true)
+            return
+        }
+
+        edgeAnimationEndsAt = Date().addingTimeInterval(edgeAnimationDuration)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = edgeAnimationDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            context.allowsImplicitAnimation = true
+            panel.animator().alphaValue = 1
+            panel.animator().setFrame(finalFrame, display: true)
+        } completionHandler: { [weak self] in
+            Task { @MainActor in
+                guard let self, self.edgeAnimationRevision == revision else { return }
+                self.panel.alphaValue = 1
+                self.panel.setFrame(finalFrame, display: true)
+            }
+        }
+    }
+
+    private func hideEdgeDetail(from finalFrame: NSRect, animated: Bool) {
+        guard panel.isVisible else {
+            panel.alphaValue = 1
+            panel.setFrame(finalFrame, display: true)
+            return
+        }
+
+        edgeAnimationRevision += 1
+        let revision = edgeAnimationRevision
+        guard animated else {
+            if Date() >= edgeAnimationEndsAt {
+                panel.orderOut(nil)
+                panel.alphaValue = 1
+                panel.setFrame(finalFrame, display: true)
+            }
+            return
+        }
+
+        edgeAnimationEndsAt = Date().addingTimeInterval(edgeAnimationDuration)
+        let hiddenFrame = finalFrame.offsetBy(dx: edgeSlideDistance, dy: 0)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = edgeAnimationDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            context.allowsImplicitAnimation = true
+            panel.animator().alphaValue = 0
+            panel.animator().setFrame(hiddenFrame, display: true)
+        } completionHandler: { [weak self] in
+            Task { @MainActor in
+                guard let self,
+                      self.edgeAnimationRevision == revision,
+                      !self.presentationState.isExpanded else {
+                    return
+                }
+                self.panel.orderOut(nil)
+                self.panel.alphaValue = 1
+                self.panel.setFrame(finalFrame, display: true)
+            }
         }
     }
 
@@ -312,10 +524,8 @@ final class DockPanelController {
             max(initialCenterY, visibleFrame.minY + halfHeight + screenEdgeInset),
             visibleFrame.maxY - halfHeight - screenEdgeInset
         )
-        let touchesEdge = store.settings.hudStyle == .edgeStrip
-        let trailingInset: CGFloat = touchesEdge ? 0 : screenEdgeInset
         let targetFrame = NSRect(
-            x: screen.frame.maxX - size.width - trailingInset,
+            x: screen.frame.maxX - size.width - screenEdgeInset,
             y: centerY - halfHeight,
             width: size.width,
             height: size.height
@@ -327,19 +537,6 @@ final class DockPanelController {
     }
 
     private func rightEdgePanelSize() -> NSSize {
-        if store.settings.hudStyle == .edgeStrip {
-            return NSSize(
-                width: presentationState.isExpanded
-                    ? HUDMetrics.edgeExpandedWidth
-                    : HUDMetrics.edgeCollapsedWidth,
-                height: presentationState.isExpanded
-                    ? HUDMetrics.edgeExpandedHeight(
-                        windowCount: store.snapshot?.displayWindows.count ?? 0
-                    )
-                    : HUDMetrics.edgeCollapsedHeight
-            )
-        }
-
         return NSSize(
             width: store.settings.hudStyle == .expanded
                 ? HUDMetrics.expandedBaseWidth(
@@ -397,7 +594,10 @@ final class DockPanelController {
     }
 
     private func preferredScreen() -> NSScreen? {
-        if let current = NSScreen.screens.first(where: { $0.frame.intersects(panel.frame) }) {
+        let referenceFrame = store.settings.hudStyle == .edgeStrip
+            ? edgeStripPanel.frame
+            : panel.frame
+        if let current = NSScreen.screens.first(where: { $0.frame.intersects(referenceFrame) }) {
             return current
         }
         return NSScreen.main ?? NSScreen.screens.first

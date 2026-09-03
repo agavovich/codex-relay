@@ -163,7 +163,7 @@ final class CodexAppServerClient {
 
         let clientVersion = Bundle.main.object(
             forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "0.5.2"
+        ) as? String ?? "0.5.3"
         let initializeMessage = [
             "method": "initialize",
             "id": 0,

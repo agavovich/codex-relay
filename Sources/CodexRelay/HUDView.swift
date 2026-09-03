@@ -33,37 +33,49 @@ final class HUDPresentationState: ObservableObject {
     @Published private(set) var style: HUDStyle
     @Published private(set) var isExpanded: Bool
     @Published private(set) var isEdgePinned = false
-    @Published private(set) var isEdgeChromeVisible: Bool
 
-    private var isEdgeHovering = false
+    private var isEdgeStripHovering = false
+    private var isEdgePanelHovering = false
     private var isPopoverPresented = false
     private var edgeTransitionTask: Task<Void, Never>?
-    private var edgeChromeTask: Task<Void, Never>?
+
+    private var isEdgeHovering: Bool {
+        isEdgeStripHovering || isEdgePanelHovering
+    }
 
     init(style: HUDStyle) {
         self.style = style
         isExpanded = style == .expanded
-        isEdgeChromeVisible = false
     }
 
     deinit {
         edgeTransitionTask?.cancel()
-        edgeChromeTask?.cancel()
     }
 
     func setStyle(_ style: HUDStyle) {
         edgeTransitionTask?.cancel()
-        edgeChromeTask?.cancel()
         self.style = style
         isEdgePinned = false
-        isEdgeHovering = false
+        isEdgeStripHovering = false
+        isEdgePanelHovering = false
         isExpanded = style == .expanded
-        isEdgeChromeVisible = false
     }
 
-    func setEdgeHovering(_ hovering: Bool) {
+    func setEdgeStripHovering(_ hovering: Bool) {
+        updateEdgeHover(strip: hovering)
+    }
+
+    func setEdgePanelHovering(_ hovering: Bool) {
+        updateEdgeHover(panel: hovering)
+    }
+
+    private func updateEdgeHover(strip: Bool? = nil, panel: Bool? = nil) {
         guard style == .edgeStrip else { return }
-        isEdgeHovering = hovering
+        let wasHovering = isEdgeHovering
+        if let strip { isEdgeStripHovering = strip }
+        if let panel { isEdgePanelHovering = panel }
+        let hovering = isEdgeHovering
+        guard hovering != wasHovering else { return }
         scheduleEdgeExpansion(expanded: hovering, delay: hovering ? 0.06 : 0.16)
     }
 
@@ -113,26 +125,8 @@ final class HUDPresentationState: ObservableObject {
     }
 
     private func setEdgeExpanded(_ expanded: Bool) {
-        edgeChromeTask?.cancel()
-
-        if expanded {
-            isEdgeChromeVisible = true
-            isExpanded = true
-            return
-        }
-
-        isExpanded = false
-        edgeChromeTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 280_000_000)
-            guard !Task.isCancelled, let self,
-                  !self.isExpanded,
-                  !self.isEdgePinned,
-                  !self.isEdgeHovering,
-                  !self.isPopoverPresented else {
-                return
-            }
-            self.isEdgeChromeVisible = false
-        }
+        guard expanded != isExpanded else { return }
+        isExpanded = expanded
     }
 }
 
@@ -188,8 +182,8 @@ enum HUDMetrics {
     static let baseWidth: CGFloat = brandSectionWidth
         + 2 * (1 + multiWindowWidth + sectionInset * 2)
     static let edgeCollapsedWidth: CGFloat = 8
-    static let edgeCollapsedHeight: CGFloat = 256
-    static let edgeExpandedWidth: CGFloat = 244
+    static let edgePanelWidth: CGFloat = 214
+    static let edgePanelHeight: CGFloat = 240
 
     static func expandedBaseWidth(windowCount: Int) -> CGFloat {
         switch windowCount {
@@ -206,9 +200,6 @@ enum HUDMetrics {
         }
     }
 
-    static func edgeExpandedHeight(windowCount: Int) -> CGFloat {
-        252 + CGFloat(max(0, windowCount - 1)) * 54
-    }
 }
 
 struct HUDView: View {
@@ -242,7 +233,7 @@ struct HUDView: View {
         GeometryReader { geometry in
             let size = geometry.size
             let cornerRadius = isEdgeStrip
-                ? 18
+                ? 16
                 : min(
                     size.height / 2,
                     HUDMetrics.baseCornerRadius * size.height / HUDMetrics.baseHeight
@@ -268,7 +259,7 @@ struct HUDView: View {
                 }
         )
         .onHover { hovering in
-            presentationState.setEdgeHovering(hovering)
+            presentationState.setEdgePanelHovering(hovering)
         }
         .help(store.errorMessage ?? "Codex refreshes every minute")
         .onChange(of: showingAccounts) { isPresented in
@@ -350,25 +341,21 @@ struct HUDView: View {
     private func edgeSurface(size: CGSize, cornerRadius: CGFloat) -> some View {
         edgeContent(size: size)
             .background {
-                if presentationState.isEdgeChromeVisible {
-                    if #available(macOS 26.0, *) {
-                        EdgeAttachedShape(cornerRadius: cornerRadius)
-                            .fill(Color.clear)
-                            .glassEffect(
-                                .clear,
-                                in: EdgeAttachedShape(cornerRadius: cornerRadius)
-                            )
-                            .overlay { edgeDarkeningLayer(cornerRadius: cornerRadius) }
-                    } else {
-                    EdgeAttachedShape(cornerRadius: cornerRadius)
-                        .fill(.ultraThinMaterial)
-                        .overlay { edgeDarkeningLayer(cornerRadius: cornerRadius) }
-                        .overlay {
-                            EdgeAttachedShape(cornerRadius: cornerRadius)
-                                .stroke(Color.white.opacity(isExpanded ? 0.20 : 0.14), lineWidth: 0.75)
-                        }
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.105, green: 0.11, blue: 0.12).opacity(0.96),
+                                Color(red: 0.075, green: 0.08, blue: 0.09).opacity(0.97)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.75)
                     }
-                }
             }
     }
 
@@ -403,32 +390,12 @@ struct HUDView: View {
     }
 
     private func edgeContent(size: CGSize) -> some View {
-        ZStack(alignment: .trailing) {
-            edgeExpandedContent
-                .frame(
-                    width: HUDMetrics.edgeExpandedWidth,
-                    height: HUDMetrics.edgeExpandedHeight(
-                        windowCount: store.snapshot?.displayWindows.count ?? 0
-                    )
-                )
-                .allowsHitTesting(isExpanded)
-                .accessibilityHidden(!isExpanded)
-
-            EdgeStripIndicator(
-                window: store.snapshot?.preferredHUDWindow,
-                hasError: store.errorMessage != nil
-            )
-            .frame(
-                width: HUDMetrics.edgeCollapsedWidth,
-                height: HUDMetrics.edgeCollapsedHeight
-            )
-        }
-        .frame(width: size.width, height: size.height, alignment: .trailing)
-        .clipped()
+        edgeExpandedContent
+            .frame(width: size.width, height: size.height)
     }
 
     private var edgeExpandedContent: some View {
-        VStack(spacing: 11) {
+        VStack(spacing: 7) {
             edgeAccountSummary
 
             Rectangle()
@@ -436,29 +403,22 @@ struct HUDView: View {
                 .frame(height: 1)
 
             if let snapshot = store.snapshot, !snapshot.displayWindows.isEmpty {
-                let preferred = snapshot.preferredHUDWindow
                 ForEach(Array(snapshot.displayWindows.enumerated()), id: \.offset) { _, window in
-                    edgeLimitRow(
-                        window,
-                        isPriority: window == preferred
-                    )
+                    edgeLimitRow(window)
                 }
             } else {
                 loadingState
-                    .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+                    .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
             }
 
             Spacer(minLength: 0)
 
-            Rectangle()
-                .fill(Color.primary.opacity(0.12))
-                .frame(height: 1)
+            edgeResetCredits
 
             edgeActions
         }
-        .padding(.leading, 15)
-        .padding(.trailing, HUDMetrics.edgeCollapsedWidth + 11)
-        .padding(.vertical, 13)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
@@ -514,7 +474,7 @@ struct HUDView: View {
     }
 
     private var edgeActions: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 6) {
             edgeActionButton("person.2.fill", title: "Accounts") {
                 openAccounts()
             }
@@ -540,7 +500,7 @@ struct HUDView: View {
                 Text(title)
                     .font(.system(size: 7.5, weight: .semibold, design: .rounded))
             }
-            .frame(maxWidth: .infinity, minHeight: 31)
+            .frame(maxWidth: .infinity, minHeight: 29)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.primary.opacity(0.06))
@@ -550,20 +510,10 @@ struct HUDView: View {
         .help(title)
     }
 
-    private func edgeLimitRow(
-        _ window: RateLimitWindow,
-        isPriority: Bool
-    ) -> some View {
-        VStack(spacing: 5) {
+    private func edgeLimitRow(_ window: RateLimitWindow) -> some View {
+        VStack(spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
-                HStack(spacing: 5) {
-                    Text(window.displayTitle)
-                    if isPriority {
-                        Text("ACTIVE")
-                            .font(.system(size: 6.5, weight: .bold, design: .rounded))
-                            .foregroundStyle(.mint)
-                    }
-                }
+                Text(window.displayTitle)
                 .font(.system(size: 8.5, weight: .bold, design: .rounded))
                 .foregroundStyle(.secondary)
 
@@ -597,6 +547,19 @@ struct HUDView: View {
         .frame(maxWidth: .infinity)
     }
 
+    private var edgeResetCredits: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "arrow.counterclockwise.circle")
+            Text("RESET CREDITS")
+            Spacer()
+            Text("\(store.resetCreditCount)")
+                .foregroundStyle(store.resetCreditCount > 0 ? .mint : .secondary)
+        }
+        .font(.system(size: 8, weight: .semibold, design: .rounded))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 2)
+    }
+
     private func edgeTint(for remaining: Double) -> Color {
         switch remaining {
         case ..<25: return .red
@@ -612,20 +575,6 @@ struct HUDView: View {
                     colors: [
                         Color.black.opacity(isExpanded ? 0.32 : 0.23),
                         Color.black.opacity(isExpanded ? 0.37 : 0.27)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-    }
-
-    private func edgeDarkeningLayer(cornerRadius: CGFloat) -> some View {
-        EdgeAttachedShape(cornerRadius: cornerRadius)
-            .fill(
-                LinearGradient(
-                    colors: [
-                        Color.black.opacity(0.34),
-                        Color.black.opacity(0.40)
                     ],
                     startPoint: .top,
                     endPoint: .bottom
@@ -774,13 +723,44 @@ struct HUDView: View {
     }
 }
 
+struct EdgeStripView: View {
+    @ObservedObject var store: LimitStore
+    @ObservedObject var presentationState: HUDPresentationState
+    let dragHandler: HUDWindowDragHandler
+
+    var body: some View {
+        EdgeStripIndicator(
+            window: store.snapshot?.preferredHUDWindow,
+            hasError: store.errorMessage != nil
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            presentationState.toggleEdgePin()
+        }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 3)
+                .onChanged { value in
+                    dragHandler.update(translation: value.translation)
+                }
+                .onEnded { _ in
+                    dragHandler.end()
+                }
+        )
+        .onHover { hovering in
+            presentationState.setEdgeStripHovering(hovering)
+        }
+        .help(store.errorMessage ?? "Codex limits")
+    }
+}
+
 private struct EdgeStripIndicator: View {
     let window: RateLimitWindow?
     let hasError: Bool
 
     var body: some View {
         let remaining = window?.remainingPercent ?? 0
-        let maximumHeight: CGFloat = 240
+        let maximumHeight: CGFloat = HUDMetrics.edgePanelHeight - 12
         let fillHeight = max(5, maximumHeight * remaining / 100)
 
         return ZStack(alignment: .bottom) {
@@ -813,29 +793,6 @@ private struct EdgeStripIndicator: View {
         case ..<50: return .yellow
         default: return .white
         }
-    }
-}
-
-private struct EdgeAttachedShape: Shape {
-    let cornerRadius: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        let radius = min(cornerRadius, rect.height / 2, rect.width)
-        var path = Path()
-        path.move(to: CGPoint(x: rect.maxX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.minX + radius, y: rect.minY))
-        path.addQuadCurve(
-            to: CGPoint(x: rect.minX, y: rect.minY + radius),
-            control: CGPoint(x: rect.minX, y: rect.minY)
-        )
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - radius))
-        path.addQuadCurve(
-            to: CGPoint(x: rect.minX + radius, y: rect.maxY),
-            control: CGPoint(x: rect.minX, y: rect.maxY)
-        )
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.closeSubpath()
-        return path
     }
 }
 
