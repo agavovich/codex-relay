@@ -59,6 +59,7 @@ private final class NativeMaterialHostingView<Content: View>: NSView {
     private let effectView = NSVisualEffectView()
     private let hostingView: FirstMouseHostingView<Content>
     private var materialEnabled = false
+    private var hoverTrackingEnabled = false
     private var hoverTrackingArea: NSTrackingArea?
     var onHoverChanged: ((Bool) -> Void)?
 
@@ -105,7 +106,9 @@ private final class NativeMaterialHostingView<Content: View>: NSView {
         super.updateTrackingAreas()
         if let hoverTrackingArea {
             removeTrackingArea(hoverTrackingArea)
+            self.hoverTrackingArea = nil
         }
+        guard hoverTrackingEnabled else { return }
 
         let area = NSTrackingArea(
             rect: bounds,
@@ -118,10 +121,12 @@ private final class NativeMaterialHostingView<Content: View>: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
+        guard hoverTrackingEnabled else { return }
         onHoverChanged?(true)
     }
 
     override func mouseExited(with event: NSEvent) {
+        guard hoverTrackingEnabled else { return }
         onHoverChanged?(false)
     }
 
@@ -140,6 +145,12 @@ private final class NativeMaterialHostingView<Content: View>: NSView {
         layer?.masksToBounds = enabled
         layer?.borderWidth = enabled ? 0.75 : 0
         updateBorderColor()
+    }
+
+    func setHoverTrackingEnabled(_ enabled: Bool) {
+        guard enabled != hoverTrackingEnabled else { return }
+        hoverTrackingEnabled = enabled
+        updateTrackingAreas()
     }
 
     private func updateBorderColor() {
@@ -375,6 +386,7 @@ final class DockPanelController {
     private func handleEdgePanelHover(_ hovering: Bool) {
         guard store.settings.hudStyle == .edgeStrip else { return }
         if hovering {
+            guard panel.alphaValue > 0, !panel.ignoresMouseEvents else { return }
             presentationState.setEdgePanelHovering(true)
             return
         }
@@ -402,6 +414,7 @@ final class DockPanelController {
             }
         } else {
             edgeStripPanel.orderOut(nil)
+            panelContentView.setHoverTrackingEnabled(false)
             panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.dockWindow)) + 1)
             panel.alphaValue = 1
             panel.ignoresMouseEvents = false
@@ -611,12 +624,14 @@ final class DockPanelController {
         }
         // Keep the window and its material surface alive while collapsed.
         // Showing it now requires no new WindowServer composition.
+        panelContentView.setHoverTrackingEnabled(true)
         panel.ignoresMouseEvents = false
         panel.alphaValue = 1
     }
 
     private func hideEdgeDetail(from finalFrame: NSRect) {
         panel.setFrame(finalFrame, display: true)
+        panelContentView.setHoverTrackingEnabled(false)
         panel.ignoresMouseEvents = true
         panel.alphaValue = 0
         if !panel.isVisible {
