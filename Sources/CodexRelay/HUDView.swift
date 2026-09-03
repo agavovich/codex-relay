@@ -76,10 +76,15 @@ final class HUDPresentationState: ObservableObject {
         if let panel { isEdgePanelHovering = panel }
         let hovering = isEdgeHovering
         guard hovering != wasHovering else { return }
-        // Keep the edge panel feeling attached to the pointer. A tiny enter
-        // debounce filters incidental crossings; the short leave grace period
-        // is only long enough to bridge the gap between the strip and panel.
-        scheduleEdgeExpansion(expanded: hovering, delay: hovering ? 0.01 : 0.045)
+        edgeTransitionTask?.cancel()
+        if hovering {
+            setEdgeExpanded(true)
+        } else {
+            // One short seam guard lets mouseExited on the strip and
+            // mouseEntered on the adjacent panel settle in the right order.
+            // There is no visible transition animation after this check.
+            scheduleEdgeExpansion(expanded: false, delay: 0.02)
+        }
     }
 
     func toggleEdgePin() {
@@ -96,7 +101,7 @@ final class HUDPresentationState: ObservableObject {
         if presented {
             setEdgeExpanded(true)
         } else if !isEdgePinned, !isEdgeHovering {
-            scheduleEdgeExpansion(expanded: false, delay: 0.045)
+            scheduleEdgeExpansion(expanded: false, delay: 0.02)
         }
     }
 

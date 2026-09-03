@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 import CoreGraphics
-import QuartzCore
 import SwiftUI
 
 private final class FloatingPanel: NSPanel {
@@ -23,9 +22,7 @@ final class DockPanelController {
     private let presentationState: HUDPresentationState
     private let edgeStripPanel: NSPanel
     private let screenEdgeInset: CGFloat = 5
-    private let edgePanelGap: CGFloat = 6
-    private let edgeSlideDistance: CGFloat = 4
-    private let edgeAnimationDuration: TimeInterval = 0.07
+    private let edgePanelGap: CGFloat = 0
     private var placementTimer: Timer?
     private var observers: [NSObjectProtocol] = []
     private var manuallyHidden = false
@@ -34,8 +31,6 @@ final class DockPanelController {
     private var expansionCancellable: AnyCancellable?
     private var styleCancellable: AnyCancellable?
     private var placementCancellable: AnyCancellable?
-    private var edgeAnimationRevision = 0
-    private var edgeAnimationEndsAt = Date.distantPast
 
     init(store: LimitStore) {
         self.store = store
@@ -207,7 +202,7 @@ final class DockPanelController {
 
     private func setExpanded(_ expanded: Bool) {
         if store.settings.hudStyle == .edgeStrip {
-            repositionEdgeWindows(animated: true)
+            repositionEdgeWindows(animated: false)
             return
         }
         panel.hasShadow = expanded
@@ -388,7 +383,7 @@ final class DockPanelController {
         }
     }
 
-    private func repositionEdgeWindows(animated: Bool) {
+    private func repositionEdgeWindows(animated _: Bool) {
         guard let screen = preferredScreen() else { return }
 
         let visibleFrame = screen.visibleFrame
@@ -422,88 +417,26 @@ final class DockPanelController {
         }
 
         if presentationState.isExpanded {
-            showEdgeDetail(at: detailFrame, animated: animated)
+            showEdgeDetail(at: detailFrame)
         } else {
-            hideEdgeDetail(from: detailFrame, animated: animated)
+            hideEdgeDetail(from: detailFrame)
         }
     }
 
-    private func showEdgeDetail(at finalFrame: NSRect, animated: Bool) {
-        edgeAnimationRevision += 1
-        let revision = edgeAnimationRevision
-        let wasVisible = panel.isVisible
+    private func showEdgeDetail(at finalFrame: NSRect) {
         panel.hasShadow = true
         panel.level = NSWindow.Level(rawValue: edgeStripPanel.level.rawValue + 1)
-
-        if !wasVisible {
-            panel.alphaValue = animated ? 0 : 1
-            panel.setFrame(
-                animated ? finalFrame.offsetBy(dx: edgeSlideDistance, dy: 0) : finalFrame,
-                display: true
-            )
+        panel.alphaValue = 1
+        panel.setFrame(finalFrame, display: true)
+        if !panel.isVisible {
             panel.orderFrontRegardless()
-        }
-
-        guard animated else {
-            panel.alphaValue = 1
-            panel.setFrame(finalFrame, display: true)
-            return
-        }
-
-        edgeAnimationEndsAt = Date().addingTimeInterval(edgeAnimationDuration)
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = edgeAnimationDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            context.allowsImplicitAnimation = true
-            panel.animator().alphaValue = 1
-            panel.animator().setFrame(finalFrame, display: true)
-        } completionHandler: { [weak self] in
-            Task { @MainActor in
-                guard let self, self.edgeAnimationRevision == revision else { return }
-                self.panel.alphaValue = 1
-                self.panel.setFrame(finalFrame, display: true)
-            }
         }
     }
 
-    private func hideEdgeDetail(from finalFrame: NSRect, animated: Bool) {
-        guard panel.isVisible else {
-            panel.alphaValue = 1
-            panel.setFrame(finalFrame, display: true)
-            return
-        }
-
-        edgeAnimationRevision += 1
-        let revision = edgeAnimationRevision
-        guard animated else {
-            if Date() >= edgeAnimationEndsAt {
-                panel.orderOut(nil)
-                panel.alphaValue = 1
-                panel.setFrame(finalFrame, display: true)
-            }
-            return
-        }
-
-        edgeAnimationEndsAt = Date().addingTimeInterval(edgeAnimationDuration)
-        let hiddenFrame = finalFrame.offsetBy(dx: edgeSlideDistance, dy: 0)
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = edgeAnimationDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            context.allowsImplicitAnimation = true
-            panel.animator().alphaValue = 0
-            panel.animator().setFrame(hiddenFrame, display: true)
-        } completionHandler: { [weak self] in
-            Task { @MainActor in
-                guard let self,
-                      self.edgeAnimationRevision == revision,
-                      !self.presentationState.isExpanded else {
-                    return
-                }
-                self.panel.orderOut(nil)
-                self.panel.alphaValue = 1
-                self.panel.setFrame(finalFrame, display: true)
-            }
-        }
+    private func hideEdgeDetail(from finalFrame: NSRect) {
+        panel.orderOut(nil)
+        panel.alphaValue = 1
+        panel.setFrame(finalFrame, display: true)
     }
 
     private func repositionRightEdge(animated: Bool) {
