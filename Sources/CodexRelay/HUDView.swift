@@ -269,7 +269,6 @@ struct HUDView: View {
         .onHover { hovering in
             presentationState.setEdgePanelHovering(hovering)
         }
-        .help(store.errorMessage ?? "Codex refreshes every minute")
         .onChange(of: showingAccounts) { isPresented in
             presentationState.setPopoverPresented(isPresented)
             if isPresented {
@@ -346,29 +345,8 @@ struct HUDView: View {
     }
 
     @ViewBuilder
-    private func edgeSurface(size: CGSize, cornerRadius: CGFloat) -> some View {
+    private func edgeSurface(size: CGSize, cornerRadius _: CGFloat) -> some View {
         edgeContent(size: size)
-            .background {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.black.opacity(0.20),
-                                        Color.black.opacity(0.31)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                    }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.19), lineWidth: 0.75)
-                    }
-            }
     }
 
     private func standardContent(size: CGSize) -> some View {
@@ -762,7 +740,6 @@ struct EdgeStripView: View {
         .onHover { hovering in
             presentationState.setEdgeStripHovering(hovering)
         }
-        .help(store.errorMessage ?? "Codex limits")
     }
 }
 
@@ -786,11 +763,6 @@ private struct EdgeStripIndicator: View {
             .frame(width: 7, height: maximumHeight)
             .shadow(color: Color.black.opacity(0.22), radius: 1.5, x: -0.5, y: 0.5)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            .help(
-                window.map {
-                    "\($0.displayTitle): \(Int($0.remainingPercent.rounded()))% remaining"
-                } ?? "Codex limits unavailable"
-            )
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(
                 window.map {

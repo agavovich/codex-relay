@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import CoreGraphics
+import QuartzCore
 import SwiftUI
 
 private final class FloatingPanel: NSPanel {
@@ -14,6 +15,74 @@ private final class FirstMouseHostingView<Content: View>: NSHostingView<Content>
     }
 }
 
+private final class NativeMaterialHostingView<Content: View>: NSView {
+    private let effectView = NSVisualEffectView()
+    private let hostingView: FirstMouseHostingView<Content>
+    private var materialEnabled = false
+
+    init(rootView: Content) {
+        hostingView = FirstMouseHostingView(rootView: rootView)
+        super.init(frame: .zero)
+
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+
+        effectView.material = .popover
+        effectView.blendingMode = .behindWindow
+        effectView.state = .active
+        effectView.isEmphasized = false
+        effectView.isHidden = true
+
+        effectView.translatesAutoresizingMaskIntoConstraints = false
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(effectView)
+        addSubview(hostingView)
+
+        NSLayoutConstraint.activate([
+            effectView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            effectView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            effectView.topAnchor.constraint(equalTo: topAnchor),
+            effectView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            hostingView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            hostingView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            hostingView.topAnchor.constraint(equalTo: topAnchor),
+            hostingView.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateBorderColor()
+    }
+
+    func setPopoverMaterialEnabled(_ enabled: Bool) {
+        guard enabled != materialEnabled else { return }
+        materialEnabled = enabled
+        effectView.isHidden = !enabled
+
+        layer?.cornerRadius = enabled ? 16 : 0
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = enabled
+        layer?.borderWidth = enabled ? 0.75 : 0
+        updateBorderColor()
+    }
+
+    private func updateBorderColor() {
+        layer?.borderColor = materialEnabled
+            ? NSColor.separatorColor.withAlphaComponent(0.72).cgColor
+            : NSColor.clear.cgColor
+    }
+}
+
 @MainActor
 final class DockPanelController {
     let panel: NSPanel
@@ -21,6 +90,7 @@ final class DockPanelController {
     private let store: LimitStore
     private let presentationState: HUDPresentationState
     private let edgeStripPanel: NSPanel
+    private let panelContentView: NativeMaterialHostingView<HUDView>
     private let screenEdgeInset: CGFloat = 5
     private let edgePanelGap: CGFloat = 0
     private var placementTimer: Timer?
@@ -87,13 +157,16 @@ final class DockPanelController {
         self.edgeStripPanel = edgeStripPanel
 
         let dragHandler = HUDWindowDragHandler(panel: panel, settings: store.settings)
-        panel.contentView = FirstMouseHostingView(
+        let panelContentView = NativeMaterialHostingView(
             rootView: HUDView(
                 store: store,
                 presentationState: presentationState,
                 dragHandler: dragHandler
             )
         )
+        panelContentView.setPopoverMaterialEnabled(store.settings.hudStyle == .edgeStrip)
+        panel.contentView = panelContentView
+        self.panelContentView = panelContentView
         let edgeDragHandler = HUDWindowDragHandler(
             panel: edgeStripPanel,
             settings: store.settings
@@ -212,6 +285,7 @@ final class DockPanelController {
 
     private func setStyle(_ style: HUDStyle) {
         presentationState.setStyle(style)
+        panelContentView.setPopoverMaterialEnabled(style == .edgeStrip)
         restoredRightEdgePosition = false
         panel.hasShadow = presentationState.isExpanded
         panel.invalidateShadow()
