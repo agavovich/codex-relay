@@ -247,8 +247,14 @@ struct HUDView: View {
                 outsideClickMonitor.stop()
             }
         }
-        .onChange(of: store.accountPopoverRequest) { _ in
-            activePopover = .accounts
+        .onChange(of: store.hudPopoverRequest) { request in
+            guard let request else { return }
+            switch request.destination {
+            case .limits:
+                activePopover = .limits
+            case .accounts:
+                activePopover = .accounts
+            }
         }
         .onChange(of: store.activeProfile.id) { _ in
             activePopover = nil
@@ -277,6 +283,17 @@ struct HUDView: View {
                 if presented {
                     activePopover = popover
                 } else if activePopover == popover {
+                    activePopover = nil
+                }
+            }
+        )
+    }
+
+    private var standardPopoverBinding: Binding<Bool> {
+        Binding(
+            get: { activePopover == .accounts || activePopover == .limits },
+            set: { presented in
+                if !presented {
                     activePopover = nil
                 }
             }
@@ -315,9 +332,13 @@ struct HUDView: View {
                     }
             }
         }
-        .popover(isPresented: popoverBinding(.accounts), arrowEdge: .bottom) {
-            AccountPopoverView(store: store) {
-                activePopover = nil
+        .popover(isPresented: standardPopoverBinding, arrowEdge: .bottom) {
+            if activePopover == .limits {
+                EdgeLimitDetailsView(store: store)
+            } else {
+                AccountPopoverView(store: store) {
+                    activePopover = nil
+                }
             }
         }
     }

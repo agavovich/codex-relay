@@ -32,6 +32,11 @@ struct AccountSwitchRecommendation: Equatable, Identifiable {
     }
 }
 
+struct HUDPopoverRequest: Equatable {
+    let id = UUID()
+    let destination: HUDPopoverDestination
+}
+
 enum AccountSwitchAdvisor {
     static func best(
         from candidates: [AccountSwitchRecommendation],
@@ -91,10 +96,12 @@ final class LimitStore: ObservableObject {
     @Published private(set) var switchingProfileID: UUID?
     @Published private(set) var signingOutProfileID: UUID?
     @Published private(set) var switchErrorMessage: String?
-    @Published private(set) var accountPopoverRequest = 0
+    @Published private(set) var hudPopoverRequest: HUDPopoverRequest?
     @Published private(set) var switchRecommendation: AccountSwitchRecommendation?
     @Published private(set) var managementErrorMessage: String?
     @Published private(set) var reauthenticatedProfileID: UUID?
+
+    var onNotificationOpen: ((HUDPopoverDestination) -> Void)?
 
     private let client: CodexAppServerClient
     private let profileStore: AccountProfileStore
@@ -124,6 +131,12 @@ final class LimitStore: ObservableObject {
         self.notificationService = notificationService
         self.activityDetector = activityDetector
         activeProfile = profileStore.selectedProfile
+
+        notificationService.onOpenDestination = { [weak self] destination in
+            Task { @MainActor in
+                self?.onNotificationOpen?(destination)
+            }
+        }
 
         settingsCancellable = self.settings.objectWillChange.sink { [weak self] _ in
             Task { @MainActor in
@@ -185,7 +198,11 @@ final class LimitStore: ObservableObject {
     }
 
     func requestAccountPopover() {
-        accountPopoverRequest &+= 1
+        requestHUDPopover(.accounts)
+    }
+
+    func requestHUDPopover(_ destination: HUDPopoverDestination) {
+        hudPopoverRequest = HUDPopoverRequest(destination: destination)
     }
 
     func setNotificationsEnabled(_ enabled: Bool) {
@@ -556,7 +573,7 @@ final class LimitStore: ObservableObject {
 
         recommendationPromptKey = promptKey
         if settings.autoOpenRecommendations {
-            accountPopoverRequest &+= 1
+            requestHUDPopover(.accounts)
         }
 
         if promptKey.isReady, settings.notificationsEnabled {
@@ -566,7 +583,8 @@ final class LimitStore: ObservableObject {
             notificationService.send(
                 identifier: "recommendation-\(activeProfileID)-\(recommendation.profileID)",
                 title: "Codex limit exhausted",
-                body: "\(profileName) is available now. Open the HUD to switch."
+                body: "\(profileName) is available now. Open the HUD to switch.",
+                destination: .accounts
             )
         }
     }
@@ -590,10 +608,33 @@ final class LimitStore: ObservableObject {
                     notificationService.send(
                         identifier: "low-\(key)-\(Int(window.resetsAt ?? 0))",
                         title: "Codex limit is running low",
-                        body: "\(window.displayTitle) has \(Int(remaining.rounded()))% remaining."
+                        body: "\(window.displayTitle) has \(Int(remaining.rounded()))% remaining.",
+                        destination: .limits
                     )
                 }
             }
+        }
+
+        if isActiveProfile,
+           settings.notifyLowLimit,
+           previousSnapshot?.isExhausted == false,
+           currentSnapshot.isExhausted,
+           !hasReadyAlternativeAccount(excluding: profile.id) {
+            let exhaustedWindows = currentSnapshot.displayWindows
+                .filter(\.isExhausted)
+                .map(\.displayTitle)
+            let limitName = exhaustedWindows.isEmpty
+                ? "The active Codex limit"
+                : exhaustedWindows.joined(separator: " and ")
+            let resetToken = currentSnapshot.displayWindows
+                .compactMap(\.resetsAt)
+                .max() ?? Date().timeIntervalSince1970
+            notificationService.send(
+                identifier: "exhausted-\(profile.id)-\(Int(resetToken))",
+                title: "Codex limit exhausted",
+                body: "\(limitName) is exhausted. Open Accounts to choose what to use next.",
+                destination: .accounts
+            )
         }
 
         if settings.notifyOnReset,
@@ -602,8 +643,23 @@ final class LimitStore: ObservableObject {
             notificationService.send(
                 identifier: "reset-\(profile.id)-\(Int(Date().timeIntervalSince1970))",
                 title: "Codex limit restored",
-                body: "\(notificationProfileName(profile)) is available again."
+                body: "\(notificationProfileName(profile)) is available again.",
+                destination: .accounts
             )
+        }
+    }
+
+    private func hasReadyAlternativeAccount(excluding activeProfileID: UUID) -> Bool {
+        profileStore.profiles.contains { profile in
+            guard profile.id != activeProfileID,
+                  profileStore.hasCredential(for: profile.id),
+                  let state = profileStates[profile.id],
+                  state.errorMessage == nil,
+                  let snapshot = state.snapshot,
+                  !snapshot.displayWindows.isEmpty else {
+                return false
+            }
+            return !snapshot.isExhausted
         }
     }
 

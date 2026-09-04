@@ -69,6 +69,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         let panelController = DockPanelController(store: store)
         self.store = store
         self.panelController = panelController
+        store.onNotificationOpen = { [weak store, weak panelController] destination in
+            panelController?.show()
+            store?.requestHUDPopover(destination)
+            NSApplication.shared.activate(ignoringOtherApps: true)
+        }
 
         configureStatusItem()
         panelController.show()
