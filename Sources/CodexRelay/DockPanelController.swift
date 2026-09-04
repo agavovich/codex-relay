@@ -416,9 +416,19 @@ final class DockPanelController {
             edgeStripPanel.orderOut(nil)
             panelContentView.setHoverTrackingEnabled(false)
             panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.dockWindow)) + 1)
-            panel.alphaValue = 1
             panel.ignoresMouseEvents = false
-            reposition(animated: true)
+            // @Published sends the new style before AppSettings.hudStyle has
+            // finished changing. Position from the value delivered here,
+            // instead of reading the temporarily stale setting again.
+            reposition(
+                style: style,
+                placement: store.settings.hudPlacement,
+                animated: true
+            )
+            // Edge Strip keeps this panel alive at alpha 0. Restore opacity
+            // after positioning so its collapsed detail path cannot hide the
+            // newly selected Compact or Expanded HUD again.
+            panel.alphaValue = 1
             if !manuallyHidden {
                 panel.orderFrontRegardless()
             }
@@ -430,7 +440,13 @@ final class DockPanelController {
         panel.isMovableByWindowBackground = false
         restoredDetachedPosition = false
         restoredRightEdgePosition = false
-        reposition(animated: true)
+        // Use the value delivered by @Published. Reading hudPlacement here
+        // still returns the previous value until the setter completes.
+        reposition(
+            style: store.settings.hudStyle,
+            placement: placement,
+            animated: true
+        )
     }
 
     private func updateVisibilityAndPosition() {
@@ -462,11 +478,23 @@ final class DockPanelController {
     }
 
     func reposition(animated: Bool = false) {
-        if store.settings.hudStyle == .edgeStrip {
+        reposition(
+            style: store.settings.hudStyle,
+            placement: store.settings.hudPlacement,
+            animated: animated
+        )
+    }
+
+    private func reposition(
+        style: HUDStyle,
+        placement: HUDPlacement,
+        animated: Bool
+    ) {
+        if style == .edgeStrip {
             repositionEdgeWindows(animated: animated)
-        } else if store.settings.hudPlacement == .rightEdge {
+        } else if placement == .rightEdge {
             repositionRightEdge(animated: animated)
-        } else if store.settings.hudPlacement == .dock {
+        } else if placement == .dock {
             repositionAttached(animated: animated)
         } else {
             repositionDetached(animated: animated)
