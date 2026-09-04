@@ -8,16 +8,17 @@
   <strong>Codex limits and accounts, one click away.</strong>
 </p>
 
-Codex Relay is a small, unofficial macOS utility that shows your Codex usage
-beside the Dock. It keeps five-hour and weekly limits visible, shows when they
-reset, and lets you compare and switch between multiple Codex accounts without
-losing local projects, sessions, or history.
+Codex Relay is a small, unofficial macOS utility that keeps your Codex usage at
+the right edge of the screen or beside the Dock. It shows five-hour and weekly
+limits, reset times, and lets you compare and switch between multiple Codex
+accounts without losing local projects, sessions, or history.
 
-![Codex limits beside the Dock](docs/images/codex-relay-limits.jpg)
+![Edge Strip at rest and on hover](docs/images/codex-relay-edge.jpg)
 
 ## Features
 
 - three HUD styles: Compact, Expanded, and a hover-revealed vertical Edge Strip;
+- Edge Strip is the default on a new installation;
 - the Edge Strip shows only the active short limit (or the weekly fallback) until expanded;
 - placement beside the Dock, on the right edge, or anywhere on screen;
 - saved positions for free and right-edge placement;
@@ -31,9 +32,9 @@ losing local projects, sessions, or history.
 - manual update checks through GitHub Releases;
 - Launch at Login and configurable refresh intervals.
 
-![Compact and expanded HUD](docs/images/codex-relay-compact.jpg)
+![Codex Relay beside the macOS Dock](docs/images/codex-relay-dock.jpg)
 
-![Multiple Codex accounts](docs/images/codex-relay-accounts.jpg)
+![Edge Strip, Compact, and Expanded views](docs/images/codex-relay-modes.jpg)
 
 ## Requirements
 
