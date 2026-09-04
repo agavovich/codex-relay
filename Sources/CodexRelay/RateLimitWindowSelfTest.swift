@@ -110,9 +110,9 @@ enum RateLimitWindowSelfTest {
             "compact day countdown is wrong"
         )
         expect(
-            HUDMetrics.edgeStripHeight == 240
-                && HUDMetrics.edgePanelHeight < HUDMetrics.edgeStripHeight,
-            "edge quick rail changed the existing strip height"
+            HUDMetrics.edgeStripHeight == HUDMetrics.edgePanelHeight
+                && HUDMetrics.edgeStripHeight == 200,
+            "edge strip and quick rail heights do not match"
         )
 
         let exhaustedShortWindow = makeSnapshot(

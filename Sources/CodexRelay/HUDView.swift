@@ -157,9 +157,9 @@ enum HUDMetrics {
     static let baseWidth: CGFloat = brandSectionWidth
         + 2 * (1 + multiWindowWidth + sectionInset * 2)
     static let edgeCollapsedWidth: CGFloat = 7
-    static let edgeStripHeight: CGFloat = 240
-    static let edgePanelWidth: CGFloat = 58
-    static let edgePanelHeight: CGFloat = 164
+    static let edgeStripHeight: CGFloat = 200
+    static let edgePanelWidth: CGFloat = 66
+    static let edgePanelHeight: CGFloat = 200
 
     static func expandedBaseWidth(windowCount: Int) -> CGFloat {
         switch windowCount {
@@ -178,13 +178,18 @@ enum HUDMetrics {
 
 }
 
+private enum HUDPopover: Equatable {
+    case limits
+    case accounts
+    case settings
+}
+
 struct HUDView: View {
     @ObservedObject var store: LimitStore
     @ObservedObject var presentationState: HUDPresentationState
     let dragHandler: HUDWindowDragHandler
 
-    @State private var showingAccounts = false
-    @State private var openPopoverInSettings = false
+    @State private var activePopover: HUDPopover?
     @StateObject private var outsideClickMonitor = HUDOutsideClickMonitor()
 
     init(
@@ -232,47 +237,50 @@ struct HUDView: View {
                     dragHandler.end()
                 }
         )
-        .onChange(of: showingAccounts) { isPresented in
-            presentationState.setPopoverPresented(isPresented)
-            if isPresented {
+        .onChange(of: activePopover) { popover in
+            presentationState.setPopoverPresented(popover != nil)
+            if popover != nil {
                 outsideClickMonitor.start {
-                    showingAccounts = false
+                    activePopover = nil
                 }
             } else {
                 outsideClickMonitor.stop()
             }
         }
         .onChange(of: store.accountPopoverRequest) { _ in
-            openPopoverInSettings = false
-            showingAccounts = true
+            activePopover = .accounts
         }
         .onChange(of: store.activeProfile.id) { _ in
-            showingAccounts = false
+            activePopover = nil
         }
         .onDisappear {
             outsideClickMonitor.stop()
         }
-        .popover(
-            isPresented: $showingAccounts,
-            arrowEdge: isEdgeStrip ? .trailing : .bottom
-        ) {
-            AccountPopoverView(
-                store: store,
-                startsInSettings: openPopoverInSettings
-            ) {
-                showingAccounts = false
-            }
-        }
     }
 
     private func openAccounts() {
-        openPopoverInSettings = false
-        showingAccounts.toggle()
+        activePopover = activePopover == .accounts ? nil : .accounts
     }
 
     private func openSettings() {
-        openPopoverInSettings = true
-        showingAccounts = true
+        activePopover = activePopover == .settings ? nil : .settings
+    }
+
+    private func openLimitDetails() {
+        activePopover = activePopover == .limits ? nil : .limits
+    }
+
+    private func popoverBinding(_ popover: HUDPopover) -> Binding<Bool> {
+        Binding(
+            get: { activePopover == popover },
+            set: { presented in
+                if presented {
+                    activePopover = popover
+                } else if activePopover == popover {
+                    activePopover = nil
+                }
+            }
+        )
     }
 
     @ViewBuilder
@@ -286,24 +294,31 @@ struct HUDView: View {
 
     @ViewBuilder
     private func standardSurface(size: CGSize, cornerRadius: CGFloat) -> some View {
-        if #available(macOS 26.0, *) {
-            standardContent(size: size)
-                .glassEffect(.clear, in: .rect(cornerRadius: cornerRadius))
-                .background { standardDarkeningLayer(cornerRadius: cornerRadius) }
-        } else {
-            standardContent(size: size)
-                .background {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                        .overlay { standardDarkeningLayer(cornerRadius: cornerRadius) }
-                        .overlay {
-                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                                .strokeBorder(
-                                    Color.white.opacity(isExpanded ? 0.20 : 0.14),
-                                    lineWidth: 0.75
-                                )
-                        }
-                }
+        Group {
+            if #available(macOS 26.0, *) {
+                standardContent(size: size)
+                    .glassEffect(.clear, in: .rect(cornerRadius: cornerRadius))
+                    .background { standardDarkeningLayer(cornerRadius: cornerRadius) }
+            } else {
+                standardContent(size: size)
+                    .background {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                            .overlay { standardDarkeningLayer(cornerRadius: cornerRadius) }
+                            .overlay {
+                                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                    .strokeBorder(
+                                        Color.white.opacity(isExpanded ? 0.20 : 0.14),
+                                        lineWidth: 0.75
+                                    )
+                            }
+                    }
+            }
+        }
+        .popover(isPresented: popoverBinding(.accounts), arrowEdge: .bottom) {
+            AccountPopoverView(store: store) {
+                activePopover = nil
+            }
         }
     }
 
@@ -348,28 +363,44 @@ struct HUDView: View {
     }
 
     private var edgeExpandedContent: some View {
-        VStack(spacing: 8) {
-            EdgeLimitOrb(
-                window: store.snapshot?.preferredHUDWindow,
-                now: store.now,
-                hasError: store.errorMessage != nil
-            )
+        VStack(spacing: 10) {
+            Button(action: openLimitDetails) {
+                EdgeLimitOrb(
+                    window: store.snapshot?.preferredHUDWindow,
+                    hasError: store.errorMessage != nil
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Limit details")
+            .popover(isPresented: popoverBinding(.limits), arrowEdge: .trailing) {
+                EdgeLimitDetailsView(store: store)
+            }
 
             edgeQuickButton("person.2.fill", label: "Accounts") {
                 openAccounts()
+            }
+            .popover(isPresented: popoverBinding(.accounts), arrowEdge: .trailing) {
+                AccountPopoverView(store: store) {
+                    activePopover = nil
+                }
             }
 
             edgeQuickButton("gearshape.fill", label: "Settings") {
                 openSettings()
             }
+            .popover(isPresented: popoverBinding(.settings), arrowEdge: .trailing) {
+                AccountPopoverView(store: store, startsInSettings: true) {
+                    activePopover = nil
+                }
+            }
         }
-        .padding(8)
+        .padding(9)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: 29, style: .continuous)
                 .fill(Color.black.opacity(0.91))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    RoundedRectangle(cornerRadius: 29, style: .continuous)
                         .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.75)
                 }
         }
@@ -390,7 +421,7 @@ struct HUDView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(0.88))
             }
-            .frame(width: 42, height: 42)
+            .frame(width: 48, height: 48)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
@@ -617,7 +648,6 @@ private struct EdgeStripIndicator: View {
 
 private struct EdgeLimitOrb: View {
     let window: RateLimitWindow?
-    let now: Date
     let hasError: Bool
 
     private var remaining: Double {
@@ -633,54 +663,28 @@ private struct EdgeLimitOrb: View {
         }
     }
 
-    private var compactWindowTitle: String {
-        guard let minutes = window?.windowDurationMins else { return "LIMIT" }
-        switch minutes {
-        case 300: return "5H"
-        case 10_080: return "WEEK"
-        default:
-            if minutes > 0, minutes.isMultiple(of: 1_440) {
-                return "\(minutes / 1_440)D"
-            }
-            if minutes > 0, minutes.isMultiple(of: 60) {
-                return "\(minutes / 60)H"
-            }
-            return "\(max(0, minutes))M"
-        }
-    }
-
     var body: some View {
         ZStack {
             Circle()
                 .fill(Color.white.opacity(0.075))
 
             Circle()
-                .stroke(Color.white.opacity(0.13), lineWidth: 3)
+                .stroke(Color.white.opacity(0.13), lineWidth: 3.5)
 
             if window != nil {
                 Circle()
                     .trim(from: 0, to: max(0.002, remaining / 100))
                     .stroke(
                         tint,
-                        style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                        style: StrokeStyle(lineWidth: 3.5, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
             }
 
-            VStack(spacing: 0) {
-                Text(RateLimitCountdown.compactText(until: window?.resetsAt, now: now))
-                    .font(.system(size: 9.5, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(Color.white.opacity(0.92))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-
-                Text(compactWindowTitle)
-                    .font(.system(size: 5.5, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.48))
-                    .lineLimit(1)
-            }
-            .padding(.horizontal, 4)
+            Text(window.map { "\(Int($0.remainingPercent.rounded()))" } ?? "—")
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Color.white.opacity(0.94))
 
             if hasError {
                 Circle()
@@ -689,15 +693,168 @@ private struct EdgeLimitOrb: View {
                     .offset(x: 14, y: -14)
             }
         }
-        .frame(width: 42, height: 42)
+        .frame(width: 48, height: 48)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(window?.displayTitle ?? "Codex limit")
         .accessibilityValue(
-            window.map {
-                "\(Int($0.remainingPercent.rounded())) percent remaining, resets in "
-                    + RateLimitCountdown.text(until: $0.resetsAt, now: now)
-            } ?? "Unavailable"
+            window.map { "\(Int($0.remainingPercent.rounded())) percent remaining" }
+                ?? "Unavailable"
         )
+    }
+}
+
+private struct EdgeLimitDetailsView: View {
+    @ObservedObject var store: LimitStore
+
+    private var windows: [RateLimitWindow] {
+        store.snapshot?.displayWindows ?? []
+    }
+
+    private var email: String? {
+        store.settings.displayEmail(store.account?.email ?? store.activeProfile.email)
+    }
+
+    var body: some View {
+        VStack(spacing: 11) {
+            HStack(spacing: 9) {
+                ZStack {
+                    Circle().fill(Color.primary.opacity(0.07))
+                    Image(systemName: store.activeProfile.isPrimary
+                          ? "person.fill"
+                          : "person.crop.circle")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(width: 32, height: 32)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(store.activeProfile.displayName)
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .lineLimit(1)
+
+                        if let plan = CodexPlan.displayName(
+                            store.planType ?? store.activeProfile.planType
+                        ) {
+                            Text(plan)
+                                .font(.system(size: 7, weight: .bold, design: .rounded))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2.5)
+                                .background(Capsule().fill(Color.primary.opacity(0.07)))
+                        }
+                    }
+
+                    if let email {
+                        Text(email)
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 6)
+
+                Button(action: store.refresh) {
+                    if store.isRefreshing {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+                .buttonStyle(.borderless)
+                .disabled(store.isRefreshing)
+                .help("Refresh limits")
+            }
+
+            Divider()
+
+            if windows.isEmpty {
+                Text(store.errorMessage ?? "No active limits reported")
+                    .font(.system(size: 10))
+                    .foregroundStyle(store.errorMessage == nil ? Color.secondary : Color.red)
+                    .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(Array(windows.enumerated()), id: \.offset) { _, window in
+                        EdgeLimitDetailRow(window: window, now: store.now)
+                    }
+                }
+            }
+
+            Divider()
+
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.counterclockwise.circle")
+                Text("RESET CREDITS")
+                Spacer()
+                Text("\(store.resetCreditCount)")
+                    .foregroundStyle(store.resetCreditCount > 0 ? .mint : .secondary)
+            }
+            .font(.system(size: 8.5, weight: .semibold, design: .rounded))
+            .foregroundStyle(.secondary)
+        }
+        .padding(13)
+        .frame(width: 290)
+    }
+}
+
+private struct EdgeLimitDetailRow: View {
+    let window: RateLimitWindow
+    let now: Date
+
+    private var remaining: Double { window.remainingPercent }
+
+    private var tint: Color {
+        switch remaining {
+        case ..<25: return .red
+        case ..<50: return .yellow
+        default: return .white
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 5) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(window.displayTitle)
+                    .font(.system(size: 8.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(Int(remaining.rounded()))%")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+            }
+
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.primary.opacity(0.12))
+                    Capsule()
+                        .fill(tint)
+                        .frame(width: geometry.size.width * remaining / 100)
+                }
+            }
+            .frame(height: 4)
+
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.clockwise")
+                Text("Resets in \(RateLimitCountdown.text(until: window.resetsAt, now: now))")
+                Spacer(minLength: 5)
+                if let resetsAt = window.resetsAt {
+                    Text(Date(timeIntervalSince1970: resetsAt).formatted(
+                        .dateTime.month(.abbreviated).day().hour().minute()
+                    ))
+                }
+            }
+            .font(.system(size: 8, weight: .medium, design: .rounded))
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+        .background {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Color.primary.opacity(0.035))
+        }
     }
 }
 
