@@ -71,7 +71,7 @@ struct AccountPopoverView: View {
                 Text(showingSettings ? "Settings" : "Accounts")
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                 Text(showingSettings
-                     ? "Privacy, alerts, and HUD behavior"
+                     ? "HUD, alerts, accounts, and app behavior"
                      : "Switch the Codex account and its limits")
                     .font(.system(size: 9.5))
                     .foregroundStyle(.secondary)
@@ -152,40 +152,12 @@ struct AccountPopoverView: View {
     private var settingsContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 13) {
-                settingsSection("PRIVACY") {
-                    Toggle("Mask email addresses", isOn: $store.settings.maskEmails)
-                }
-
-                settingsSection("NOTIFICATIONS") {
-                    Toggle("Enable notifications", isOn: Binding(
-                        get: { store.settings.notificationsEnabled },
-                        set: store.setNotificationsEnabled
-                    ))
-
-                    Toggle("Low-limit alert", isOn: $store.settings.notifyLowLimit)
-                        .disabled(!store.settings.notificationsEnabled)
-
-                    Picker("Alert at", selection: $store.settings.lowLimitThreshold) {
-                        ForEach(AppSettings.lowLimitThresholds, id: \.self) { value in
-                            Text("\(value)%").tag(value)
-                        }
-                    }
-                    .disabled(!store.settings.notificationsEnabled || !store.settings.notifyLowLimit)
-
-                    Toggle("Notify when a limit resets", isOn: $store.settings.notifyOnReset)
-                        .disabled(!store.settings.notificationsEnabled)
-                }
-
-                settingsSection("BEHAVIOR") {
-                    Picker("HUD style", selection: Binding(
-                        get: { store.settings.hudStyle },
-                        set: store.settings.setHUDStyle
-                    )) {
-                        ForEach(HUDStyle.allCases) { style in
-                            Text(style.title).tag(style)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                settingsSection("HUD") {
+                    HUDStyleChooser(
+                        selection: store.settings.hudStyle,
+                        remaining: store.snapshot?.preferredHUDWindow?.remainingPercent ?? 64,
+                        onSelect: store.settings.setHUDStyle
+                    )
 
                     Text(hudStyleDescription)
                         .font(.system(size: 9))
@@ -207,42 +179,67 @@ struct AccountPopoverView: View {
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Picker("Refresh every", selection: $store.settings.refreshInterval) {
+                    Picker("Refresh limits", selection: $store.settings.refreshInterval) {
                         ForEach(AppSettings.refreshIntervals, id: \.self) { interval in
                             Text(refreshIntervalTitle(interval)).tag(interval)
                         }
                     }
-
-                    Toggle("Open suggestions automatically", isOn: $store.settings.autoOpenRecommendations)
-                    Toggle("Show HUD only while Codex runs", isOn: $store.settings.showOnlyWhileCodexRuns)
-                    Toggle("Launch at Login", isOn: Binding(
-                        get: { store.settings.launchAtLogin },
-                        set: store.settings.setLaunchAtLogin
-                    ))
                 }
 
-                settingsSection("SWITCHING SAFETY") {
+                settingsSection("ALERTS") {
+                    Toggle("Enable notifications", isOn: Binding(
+                        get: { store.settings.notificationsEnabled },
+                        set: store.setNotificationsEnabled
+                    ))
+
+                    Toggle("Low-limit alert", isOn: $store.settings.notifyLowLimit)
+                        .disabled(!store.settings.notificationsEnabled)
+
+                    Picker("Alert at", selection: $store.settings.lowLimitThreshold) {
+                        ForEach(AppSettings.lowLimitThresholds, id: \.self) { value in
+                            Text("\(value)%").tag(value)
+                        }
+                    }
+                    .disabled(!store.settings.notificationsEnabled || !store.settings.notifyLowLimit)
+
+                    Toggle("Notify when a limit resets", isOn: $store.settings.notifyOnReset)
+                        .disabled(!store.settings.notificationsEnabled)
+                }
+
+                settingsSection("ACCOUNTS & SAFETY") {
+                    Toggle("Open suggestions automatically", isOn: $store.settings.autoOpenRecommendations)
                     Toggle("Detect visible active tasks", isOn: Binding(
                         get: { store.settings.activeTaskDetection },
                         set: store.setActiveTaskDetection
                     ))
 
-                    Text("Uses macOS Accessibility to look for Codex’s visible Stop button. "
-                         + "Without permission, switching keeps the conservative warning.")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if store.settings.activeTaskDetection {
+                        Text("Uses macOS Accessibility to detect a visible running Codex task before switching accounts.")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
 
-                    Label(
-                        store.settings.accessibilityGranted
-                            ? "Accessibility access granted"
-                            : "Accessibility access not granted",
-                        systemImage: store.settings.accessibilityGranted
-                            ? "checkmark.circle.fill"
-                            : "exclamationmark.circle"
-                    )
-                    .font(.system(size: 8.8, weight: .medium))
-                    .foregroundStyle(store.settings.accessibilityGranted ? Color.mint : Color.secondary)
+                        Label(
+                            store.settings.accessibilityGranted
+                                ? "Accessibility access granted"
+                                : "Accessibility access not granted",
+                            systemImage: store.settings.accessibilityGranted
+                                ? "checkmark.circle.fill"
+                                : "exclamationmark.circle"
+                        )
+                        .font(.system(size: 8.8, weight: .medium))
+                        .foregroundStyle(store.settings.accessibilityGranted ? Color.mint : Color.secondary)
+                    }
+
+                    Toggle("Mask email addresses", isOn: $store.settings.maskEmails)
+                }
+
+                settingsSection("APP") {
+                    Toggle("Show HUD only while Codex runs", isOn: $store.settings.showOnlyWhileCodexRuns)
+                    Toggle("Launch at Login", isOn: Binding(
+                        get: { store.settings.launchAtLogin },
+                        set: store.settings.setLaunchAtLogin
+                    ))
                 }
 
                 settingsSection("ABOUT") {
@@ -263,11 +260,11 @@ struct AccountPopoverView: View {
     private var hudStyleDescription: String {
         switch store.settings.hudStyle {
         case .compact:
-            return "Shows the preferred limit as a small ring."
+            return "A small ring showing the limit that is currently being used."
         case .expanded:
-            return "Keeps the plan and every active limit visible."
+            return "Keeps your plan and all available limits visible beside the Dock."
         case .edgeStrip:
-            return "A thin edge indicator that reveals controls when you hover."
+            return "A thin right-edge indicator. Hover to reveal limits, accounts, and settings."
         }
     }
 
@@ -723,6 +720,193 @@ struct AccountPopoverView: View {
         case 120: return "2 minutes"
         default: return "5 minutes"
         }
+    }
+}
+
+private struct HUDStyleChooser: View {
+    let selection: HUDStyle
+    let remaining: Double
+    let onSelect: (HUDStyle) -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(HUDStyle.allCases) { style in
+                Button {
+                    onSelect(style)
+                } label: {
+                    VStack(spacing: 6) {
+                        HUDStylePreview(style: style, remaining: remaining)
+                            .frame(height: 42)
+
+                        HStack(spacing: 3) {
+                            Text(style.title)
+                                .font(.system(size: 8.5, weight: .semibold, design: .rounded))
+                                .lineLimit(1)
+
+                            if selection == style {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 7.5, weight: .bold))
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 7)
+                    .frame(maxWidth: .infinity)
+                    .background {
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(selection == style
+                                  ? Color.accentColor.opacity(0.13)
+                                  : Color.primary.opacity(0.035))
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .stroke(selection == style
+                                    ? Color.accentColor.opacity(0.85)
+                                    : Color.primary.opacity(0.11),
+                                    lineWidth: selection == style ? 1.5 : 0.75)
+                    }
+                    .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(style.title) HUD")
+                .accessibilityAddTraits(selection == style ? .isSelected : [])
+            }
+        }
+    }
+}
+
+private struct HUDStylePreview: View {
+    let style: HUDStyle
+    let remaining: Double
+
+    private var fraction: Double {
+        min(max(remaining / 100, 0), 1)
+    }
+
+    private var tint: Color {
+        switch remaining {
+        case ..<25: return .red
+        case ..<50: return .yellow
+        default: return .primary
+        }
+    }
+
+    @ViewBuilder
+    var body: some View {
+        switch style {
+        case .compact:
+            compactPreview
+        case .expanded:
+            expandedPreview
+        case .edgeStrip:
+            edgeStripPreview
+        }
+    }
+
+    private var compactPreview: some View {
+        ZStack {
+            Circle()
+                .fill(Color.primary.opacity(0.07))
+            Circle()
+                .stroke(Color.primary.opacity(0.13), lineWidth: 3)
+            Circle()
+                .trim(from: 0, to: fraction)
+                .stroke(tint, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Text("\(Int(remaining.rounded()))")
+                .font(.system(size: 7, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+        }
+        .frame(width: 34, height: 34)
+    }
+
+    private var expandedPreview: some View {
+        HStack(spacing: 4) {
+            ZStack {
+                Circle().fill(Color.primary.opacity(0.12))
+                Text(">_")
+                    .font(.system(size: 5.5, weight: .bold, design: .rounded))
+            }
+            .frame(width: 19, height: 19)
+
+            Rectangle()
+                .fill(Color.primary.opacity(0.15))
+                .frame(width: 1, height: 21)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    Text("5H")
+                    Spacer(minLength: 0)
+                    Text("\(Int(remaining.rounded()))")
+                }
+                .font(.system(size: 4.5, weight: .bold, design: .rounded))
+
+                miniBar(width: 42, value: fraction)
+                miniBar(width: 34, value: 0.72)
+            }
+        }
+        .padding(.horizontal, 6)
+        .frame(width: 80, height: 31)
+        .background {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(Color.primary.opacity(0.075))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .stroke(Color.primary.opacity(0.13), lineWidth: 0.75)
+        }
+    }
+
+    private var edgeStripPreview: some View {
+        HStack(spacing: 4) {
+            VStack(spacing: 3) {
+                previewButton("\(Int(remaining.rounded()))", ring: true)
+                previewButton("person.fill", ring: false)
+                previewButton("gearshape.fill", ring: false)
+            }
+            .padding(3)
+            .background {
+                Capsule().fill(Color.primary.opacity(0.08))
+            }
+
+            ZStack(alignment: .bottom) {
+                Capsule().fill(Color.primary.opacity(0.13))
+                Capsule()
+                    .fill(tint)
+                    .frame(height: 35 * fraction)
+            }
+            .frame(width: 4, height: 35)
+        }
+    }
+
+    private func miniBar(width: CGFloat, value: Double) -> some View {
+        ZStack(alignment: .leading) {
+            Capsule().fill(Color.primary.opacity(0.13))
+            Capsule()
+                .fill(value == fraction ? tint : Color.primary.opacity(0.72))
+                .frame(width: width * value)
+        }
+        .frame(width: width, height: 2.5)
+    }
+
+    @ViewBuilder
+    private func previewButton(_ content: String, ring: Bool) -> some View {
+        ZStack {
+            Circle().fill(Color.primary.opacity(0.09))
+            if ring {
+                Circle()
+                    .trim(from: 0, to: fraction)
+                    .stroke(tint, style: StrokeStyle(lineWidth: 1.2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Text(content)
+                    .font(.system(size: 3.8, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+            } else {
+                Image(systemName: content)
+                    .font(.system(size: 4.5, weight: .semibold))
+            }
+        }
+        .frame(width: 10, height: 10)
     }
 }
 
