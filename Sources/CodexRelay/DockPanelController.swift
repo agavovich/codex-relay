@@ -200,7 +200,7 @@ final class DockPanelController {
 
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = presentationState.isExpanded || store.settings.hudStyle == .edgeStrip
+        panel.hasShadow = presentationState.isExpanded && store.settings.hudStyle != .edgeStrip
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.isMovable = store.settings.hudPlacement != .dock
@@ -216,7 +216,7 @@ final class DockPanelController {
                 x: 0,
                 y: 0,
                 width: HUDMetrics.edgeCollapsedWidth,
-                height: HUDMetrics.edgePanelHeight
+                height: HUDMetrics.edgeStripHeight
             ),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -241,7 +241,7 @@ final class DockPanelController {
                 dragHandler: dragHandler
             )
         )
-        panelContentView.setPopoverMaterialEnabled(store.settings.hudStyle == .edgeStrip)
+        panelContentView.setPopoverMaterialEnabled(false)
         panel.contentView = panelContentView
         self.panelContentView = panelContentView
         let edgeDragHandler = HUDWindowDragHandler(
@@ -401,12 +401,12 @@ final class DockPanelController {
 
     private func setStyle(_ style: HUDStyle) {
         presentationState.setStyle(style)
-        panelContentView.setPopoverMaterialEnabled(style == .edgeStrip)
+        panelContentView.setPopoverMaterialEnabled(false)
         restoredRightEdgePosition = false
-        panel.hasShadow = presentationState.isExpanded
+        panel.hasShadow = presentationState.isExpanded && style != .edgeStrip
         panel.invalidateShadow()
         if style == .edgeStrip {
-            panel.hasShadow = true
+            panel.hasShadow = false
             panel.invalidateShadow()
             repositionEdgeWindows(animated: false)
             if !manuallyHidden {
@@ -580,7 +580,7 @@ final class DockPanelController {
         guard let screen = preferredScreen() else { return }
 
         let visibleFrame = screen.visibleFrame
-        let halfHeight = HUDMetrics.edgePanelHeight / 2
+        let stripHalfHeight = HUDMetrics.edgeStripHeight / 2
         let requestedCenterY: CGFloat
         if restoredRightEdgePosition {
             requestedCenterY = edgeStripPanel.frame.midY
@@ -589,18 +589,18 @@ final class DockPanelController {
             restoredRightEdgePosition = true
         }
         let centerY = min(
-            max(requestedCenterY, visibleFrame.minY + halfHeight + screenEdgeInset),
-            visibleFrame.maxY - halfHeight - screenEdgeInset
+            max(requestedCenterY, visibleFrame.minY + stripHalfHeight + screenEdgeInset),
+            visibleFrame.maxY - stripHalfHeight - screenEdgeInset
         )
         let stripFrame = NSRect(
             x: screen.frame.maxX - HUDMetrics.edgeCollapsedWidth,
-            y: centerY - halfHeight,
+            y: centerY - stripHalfHeight,
             width: HUDMetrics.edgeCollapsedWidth,
-            height: HUDMetrics.edgePanelHeight
+            height: HUDMetrics.edgeStripHeight
         )
         let detailFrame = NSRect(
             x: stripFrame.minX - edgePanelGap - HUDMetrics.edgePanelWidth,
-            y: stripFrame.minY,
+            y: stripFrame.midY - HUDMetrics.edgePanelHeight / 2,
             width: HUDMetrics.edgePanelWidth,
             height: HUDMetrics.edgePanelHeight
         )

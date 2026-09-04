@@ -157,8 +157,9 @@ enum HUDMetrics {
     static let baseWidth: CGFloat = brandSectionWidth
         + 2 * (1 + multiWindowWidth + sectionInset * 2)
     static let edgeCollapsedWidth: CGFloat = 7
-    static let edgePanelWidth: CGFloat = 214
-    static let edgePanelHeight: CGFloat = 240
+    static let edgeStripHeight: CGFloat = 240
+    static let edgePanelWidth: CGFloat = 58
+    static let edgePanelHeight: CGFloat = 164
 
     static func expandedBaseWidth(windowCount: Int) -> CGFloat {
         switch windowCount {
@@ -218,9 +219,7 @@ struct HUDView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            if isEdgeStrip {
-                presentationState.toggleEdgePin()
-            } else {
+            if !isEdgeStrip {
                 openAccounts()
             }
         }
@@ -349,177 +348,52 @@ struct HUDView: View {
     }
 
     private var edgeExpandedContent: some View {
-        VStack(spacing: 7) {
-            edgeAccountSummary
+        VStack(spacing: 8) {
+            EdgeLimitOrb(
+                window: store.snapshot?.preferredHUDWindow,
+                now: store.now,
+                hasError: store.errorMessage != nil
+            )
 
-            Rectangle()
-                .fill(Color.primary.opacity(0.12))
-                .frame(height: 1)
-
-            if let snapshot = store.snapshot, !snapshot.displayWindows.isEmpty {
-                ForEach(Array(snapshot.displayWindows.enumerated()), id: \.offset) { _, window in
-                    edgeLimitRow(window)
-                }
-            } else {
-                loadingState
-                    .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
-            }
-
-            Spacer(minLength: 0)
-
-            edgeResetCredits
-
-            edgeActions
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-    }
-
-    private var edgeAccountSummary: some View {
-        HStack(spacing: 9) {
-            ZStack {
-                Circle().fill(Color.primary.opacity(0.08))
-                Image(systemName: "person.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: 30, height: 30)
-
-            VStack(alignment: .leading, spacing: 1.5) {
-                Text(store.activeProfile.displayName)
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .lineLimit(1)
-
-                HStack(spacing: 4) {
-                    Text(CodexPlan.displayName(store.planType) ?? "CODEX")
-                    if store.resetCreditCount > 0 {
-                        Text("↻\(store.resetCreditCount)")
-                            .foregroundStyle(.mint)
-                    }
-                }
-                .font(.system(size: 8, weight: .bold, design: .rounded))
-                .foregroundStyle(.secondary)
-
-                if let recommendation = store.switchRecommendation,
-                   let profile = store.profile(for: recommendation.profileID),
-                   profile.id != store.activeProfile.id {
-                    Text("BEST: \(profile.displayName)")
-                        .font(.system(size: 7.5, weight: .bold, design: .rounded))
-                        .foregroundStyle(.mint)
-                        .lineLimit(1)
-                }
-            }
-
-            Spacer(minLength: 6)
-
-            Button {
-                presentationState.toggleEdgePin()
-            } label: {
-                Image(systemName: presentationState.isEdgePinned ? "pin.fill" : "pin")
-                    .font(.system(size: 10, weight: .semibold))
-                    .frame(width: 26, height: 26)
-                    .background(Circle().fill(Color.primary.opacity(0.07)))
-            }
-            .buttonStyle(.plain)
-            .help(presentationState.isEdgePinned ? "Unpin panel" : "Keep panel open")
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var edgeActions: some View {
-        HStack(spacing: 6) {
-            edgeActionButton("person.2.fill", title: "Accounts") {
+            edgeQuickButton("person.2.fill", label: "Accounts") {
                 openAccounts()
             }
-            edgeActionButton("arrow.clockwise", title: "Refresh") {
-                store.refresh()
-            }
-            edgeActionButton("gearshape.fill", title: "Settings") {
+
+            edgeQuickButton("gearshape.fill", label: "Settings") {
                 openSettings()
             }
         }
-        .frame(maxWidth: .infinity)
+        .padding(8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color.black.opacity(0.91))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.75)
+                }
+        }
     }
 
-    private func edgeActionButton(
+    private func edgeQuickButton(
         _ systemName: String,
-        title: String,
+        label: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            VStack(spacing: 3) {
+            ZStack {
+                Circle()
+                    .fill(Color.white.opacity(0.075))
+                Circle()
+                    .strokeBorder(Color.white.opacity(0.11), lineWidth: 0.75)
                 Image(systemName: systemName)
-                    .font(.system(size: 9, weight: .semibold))
-                Text(title)
-                    .font(.system(size: 7.5, weight: .semibold, design: .rounded))
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.88))
             }
-            .frame(maxWidth: .infinity, minHeight: 29)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(0.06))
-            )
+            .frame(width: 42, height: 42)
         }
         .buttonStyle(.plain)
-        .help(title)
-    }
-
-    private func edgeLimitRow(_ window: RateLimitWindow) -> some View {
-        VStack(spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(window.displayTitle)
-                .font(.system(size: 8.5, weight: .bold, design: .rounded))
-                .foregroundStyle(.secondary)
-
-                Spacer()
-
-                Text("\(Int(window.remainingPercent.rounded()))%")
-                    .font(.system(size: 17, weight: .semibold, design: .rounded))
-            }
-
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.primary.opacity(0.12))
-                    Capsule()
-                        .fill(edgeTint(for: window.remainingPercent))
-                        .frame(
-                            width: geometry.size.width
-                                * max(0.025, window.remainingPercent / 100)
-                        )
-                }
-            }
-            .frame(height: 5)
-
-            HStack(spacing: 4) {
-                Image(systemName: "arrow.clockwise")
-                Text(RateLimitCountdown.text(until: window.resetsAt, now: store.now))
-                Spacer()
-            }
-            .font(.system(size: 8.5, weight: .medium, design: .rounded))
-            .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var edgeResetCredits: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "arrow.counterclockwise.circle")
-            Text("RESET CREDITS")
-            Spacer()
-            Text("\(store.resetCreditCount)")
-                .foregroundStyle(store.resetCreditCount > 0 ? .mint : .secondary)
-        }
-        .font(.system(size: 8, weight: .semibold, design: .rounded))
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 2)
-    }
-
-    private func edgeTint(for remaining: Double) -> Color {
-        switch remaining {
-        case ..<25: return .red
-        case ..<50: return .yellow
-        default: return .white
-        }
+        .accessibilityLabel(label)
     }
 
     private func standardDarkeningLayer(cornerRadius: CGFloat) -> some View {
@@ -710,7 +584,7 @@ private struct EdgeStripIndicator: View {
 
     var body: some View {
         let remaining = window?.remainingPercent ?? 0
-        let maximumHeight: CGFloat = HUDMetrics.edgePanelHeight - 12
+        let maximumHeight: CGFloat = HUDMetrics.edgeStripHeight - 12
         let fillHeight = max(5, maximumHeight * remaining / 100)
 
         return ZStack(alignment: .bottom) {
@@ -738,6 +612,92 @@ private struct EdgeStripIndicator: View {
         case ..<50: return .yellow
         default: return .white
         }
+    }
+}
+
+private struct EdgeLimitOrb: View {
+    let window: RateLimitWindow?
+    let now: Date
+    let hasError: Bool
+
+    private var remaining: Double {
+        window?.remainingPercent ?? 0
+    }
+
+    private var tint: Color {
+        guard window != nil else { return hasError ? .red : .secondary }
+        switch remaining {
+        case ..<25: return .red
+        case ..<50: return .yellow
+        default: return .white
+        }
+    }
+
+    private var compactWindowTitle: String {
+        guard let minutes = window?.windowDurationMins else { return "LIMIT" }
+        switch minutes {
+        case 300: return "5H"
+        case 10_080: return "WEEK"
+        default:
+            if minutes > 0, minutes.isMultiple(of: 1_440) {
+                return "\(minutes / 1_440)D"
+            }
+            if minutes > 0, minutes.isMultiple(of: 60) {
+                return "\(minutes / 60)H"
+            }
+            return "\(max(0, minutes))M"
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.white.opacity(0.075))
+
+            Circle()
+                .stroke(Color.white.opacity(0.13), lineWidth: 3)
+
+            if window != nil {
+                Circle()
+                    .trim(from: 0, to: max(0.002, remaining / 100))
+                    .stroke(
+                        tint,
+                        style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+            }
+
+            VStack(spacing: 0) {
+                Text(RateLimitCountdown.compactText(until: window?.resetsAt, now: now))
+                    .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Color.white.opacity(0.92))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+
+                Text(compactWindowTitle)
+                    .font(.system(size: 5.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.48))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 4)
+
+            if hasError {
+                Circle()
+                    .fill(.red)
+                    .frame(width: 5, height: 5)
+                    .offset(x: 14, y: -14)
+            }
+        }
+        .frame(width: 42, height: 42)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(window?.displayTitle ?? "Codex limit")
+        .accessibilityValue(
+            window.map {
+                "\(Int($0.remainingPercent.rounded())) percent remaining, resets in "
+                    + RateLimitCountdown.text(until: $0.resetsAt, now: now)
+            } ?? "Unavailable"
+        )
     }
 }
 

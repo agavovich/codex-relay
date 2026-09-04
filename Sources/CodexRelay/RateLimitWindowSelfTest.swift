@@ -95,6 +95,25 @@ enum RateLimitWindowSelfTest {
             RateLimitCountdown.text(until: summaryNow, now: summaryNow) == "now",
             "completed reset countdown is wrong"
         )
+        expect(
+            RateLimitCountdown.compactText(
+                until: summaryNow.addingTimeInterval(3 * 3_600 + 20 * 60).timeIntervalSince1970,
+                now: summaryNow
+            ) == "3h",
+            "compact hour countdown is wrong"
+        )
+        expect(
+            RateLimitCountdown.compactText(
+                until: summaryNow.addingTimeInterval(2 * 86_400 + 3_600).timeIntervalSince1970,
+                now: summaryNow
+            ) == "2d",
+            "compact day countdown is wrong"
+        )
+        expect(
+            HUDMetrics.edgeStripHeight == 240
+                && HUDMetrics.edgePanelHeight < HUDMetrics.edgeStripHeight,
+            "edge quick rail changed the existing strip height"
+        )
 
         let exhaustedShortWindow = makeSnapshot(
             primary: makeWindow(

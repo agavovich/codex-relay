@@ -69,6 +69,22 @@ enum RateLimitCountdown {
         }
         return "\(minutes)m"
     }
+
+    static func compactText(until timestamp: TimeInterval?, now: Date) -> String {
+        guard let timestamp else { return "—" }
+        let seconds = timestamp - now.timeIntervalSince1970
+        guard seconds > 0 else { return "NOW" }
+        if seconds < 60 { return "<1m" }
+
+        let totalMinutes = Int(ceil(seconds / 60))
+        if totalMinutes >= 1_440 {
+            return "\(totalMinutes / 1_440)d"
+        }
+        if totalMinutes >= 60 {
+            return "\(totalMinutes / 60)h"
+        }
+        return "\(totalMinutes)m"
+    }
 }
 
 enum RateLimitWindowTitle {
