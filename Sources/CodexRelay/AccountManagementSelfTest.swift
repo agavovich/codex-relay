@@ -147,8 +147,11 @@ enum AccountManagementSelfTest {
         let suiteName = "local.codex.limit-hud.self-test.\(UUID().uuidString)"
         if let defaults = UserDefaults(suiteName: suiteName) {
             let settings = AppSettings(defaults: defaults)
-            expect(settings.hudStyle == .compact, "compact HUD should be enabled by default")
-            expect(settings.hudPlacement == .dock, "HUD should attach to the Dock by default")
+            expect(settings.hudStyle == .edgeStrip, "Edge Strip should be enabled by default")
+            expect(
+                settings.hudPlacement == .rightEdge,
+                "the default Edge Strip should use right-edge placement"
+            )
             settings.setHUDStyle(.expanded)
             settings.setHUDPlacement(.free)
             settings.saveDetachedHUDOrigin(CGPoint(x: 120, y: 80))

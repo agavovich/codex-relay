@@ -120,8 +120,10 @@ final class AppSettings: ObservableObject {
         Self.migrateLegacyDefaultsIfNeeded(in: defaults)
 
         let storedStyle = defaults.string(forKey: Key.hudStyle).flatMap(HUDStyle.init(rawValue:))
-        let legacyCompact = (defaults.object(forKey: Key.compactHUD) as? Bool) ?? true
-        let initialStyle = storedStyle ?? (legacyCompact ? .compact : .expanded)
+        let legacyCompact = defaults.object(forKey: Key.compactHUD) as? Bool
+        let initialStyle = storedStyle
+            ?? legacyCompact.map { $0 ? .compact : .expanded }
+            ?? .edgeStrip
 
         let storedPlacement = defaults.string(forKey: Key.hudPlacement)
             .flatMap(HUDPlacement.init(rawValue:))
@@ -141,7 +143,7 @@ final class AppSettings: ObservableObject {
             Key.refreshInterval: 60.0,
             Key.autoOpenRecommendations: true,
             Key.showOnlyWhileCodexRuns: false,
-            Key.compactHUD: true,
+            Key.compactHUD: false,
             Key.attachHUDToDock: true,
             Key.activeTaskDetection: false
         ])
