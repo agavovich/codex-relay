@@ -39,7 +39,14 @@ enum CodexClientError: LocalizedError {
 }
 
 final class CodexAppServerClient {
+    private static let fallbackVersion = "0.7.0"
     private let fileManager = FileManager.default
+
+    private var clientVersion: String {
+        Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String ?? Self.fallbackVersion
+    }
 
     func fetchAccountUsage(
         for profile: AccountProfile = .current,
@@ -161,9 +168,6 @@ final class CodexAppServerClient {
             throw CodexClientError.launchFailed(error.localizedDescription)
         }
 
-        let clientVersion = Bundle.main.object(
-            forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "0.6.9"
         let initializeMessage = [
             "method": "initialize",
             "id": 0,
@@ -351,8 +355,25 @@ final class CodexAppServerClient {
             throw CodexClientError.launchFailed(error.localizedDescription)
         }
 
+        let initializeMessage = [
+            "method": "initialize",
+            "id": 0,
+            "params": [
+                "clientInfo": [
+                    "name": "codex_relay",
+                    "title": "Codex Relay",
+                    "version": clientVersion
+                ]
+            ]
+        ] as [String: Any]
+        let initializeData = try JSONSerialization.data(withJSONObject: initializeMessage)
+        guard let initializeLine = String(data: initializeData, encoding: .utf8) else {
+            cleanup(process: process, input: inputPipe, output: outputPipe, error: errorPipe)
+            throw CodexClientError.malformedResponse
+        }
+
         let messages = [
-            #"{"method":"initialize","id":0,"params":{"clientInfo":{"name":"codex_relay","title":"Codex Relay","version":"0.3.0"}}}"#,
+            initializeLine,
             #"{"method":"initialized","params":{}}"#,
             #"{"method":"account/login/start","id":1,"params":{"type":"chatgpt","useHostedLoginSuccessPage":true,"appBrand":"codex"}}"#
         ].joined(separator: "\n") + "\n"
