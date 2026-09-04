@@ -102,6 +102,7 @@ final class LimitStore: ObservableObject {
     @Published private(set) var reauthenticatedProfileID: UUID?
 
     var onNotificationOpen: ((HUDPopoverDestination) -> Void)?
+    let updateChecker: UpdateChecker
 
     private let client: CodexAppServerClient
     private let profileStore: AccountProfileStore
@@ -121,7 +122,8 @@ final class LimitStore: ObservableObject {
         desktopController: CodexDesktopController? = nil,
         settings: AppSettings? = nil,
         notificationService: LimitNotificationService = LimitNotificationService(),
-        activityDetector: CodexActivityDetector = CodexActivityDetector()
+        activityDetector: CodexActivityDetector = CodexActivityDetector(),
+        updateChecker: UpdateChecker? = nil
     ) {
         let profileStore = profileStore ?? AccountProfileStore()
         self.client = client
@@ -130,6 +132,7 @@ final class LimitStore: ObservableObject {
         self.settings = settings ?? AppSettings()
         self.notificationService = notificationService
         self.activityDetector = activityDetector
+        self.updateChecker = updateChecker ?? UpdateChecker()
         activeProfile = profileStore.selectedProfile
 
         notificationService.onOpenDestination = { [weak self] destination in

@@ -24,7 +24,9 @@ enum CodexRelayMain {
 
     @MainActor
     private static func runSelfTest() {
-        let failures = RateLimitWindowSelfTest.run() + AccountManagementSelfTest.run()
+        let failures = RateLimitWindowSelfTest.run()
+            + AccountManagementSelfTest.run()
+            + UpdateCheckerSelfTest.run()
         if failures.isEmpty {
             print("Codex Relay self-test: passed")
             exit(EXIT_SUCCESS)
@@ -98,6 +100,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Accounts…", action: #selector(showAccounts), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Show / Hide", action: #selector(togglePanel), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Refresh Now", action: #selector(refresh), keyEquivalent: "r"))
+        menu.addItem(NSMenuItem(
+            title: "Check for Updates…",
+            action: #selector(checkForUpdates),
+            keyEquivalent: ""
+        ))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Codex Relay", action: #selector(quit), keyEquivalent: "q"))
 
@@ -118,6 +125,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func refresh() {
         store?.refresh()
         panelController?.show()
+    }
+
+    @objc private func checkForUpdates() {
+        store?.updateChecker.check()
     }
 
     @objc private func quit() {

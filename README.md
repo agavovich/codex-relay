@@ -28,6 +28,7 @@ losing local projects, sessions, or history.
 - multiple local account profiles in one list;
 - account recommendations when the current limit runs out;
 - account switching while keeping the same local Codex data;
+- manual update checks through GitHub Releases;
 - Launch at Login and configurable refresh intervals.
 
 ![Compact and expanded HUD](docs/images/codex-relay-compact.jpg)
@@ -95,6 +96,8 @@ Account credentials and profile information stay locally in:
 Credential directories use `700` permissions and credential files use `600`.
 Codex Relay treats `auth.json` as opaque data: it does not parse, log, or upload
 its contents. The official Codex app still communicates with OpenAI as usual.
+When you choose **Check for Updates…**, Relay sends a standard request containing
+only its current version to the public GitHub Releases API.
 
 ## Notes
 

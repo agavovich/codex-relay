@@ -245,6 +245,10 @@ struct AccountPopoverView: View {
                     .foregroundStyle(store.settings.accessibilityGranted ? Color.mint : Color.secondary)
                 }
 
+                settingsSection("ABOUT") {
+                    UpdateSettingsView(checker: store.updateChecker)
+                }
+
                 if let error = store.settings.settingsError {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 9.5))
@@ -718,6 +722,57 @@ struct AccountPopoverView: View {
         case 60: return "1 minute"
         case 120: return "2 minutes"
         default: return "5 minutes"
+        }
+    }
+}
+
+private struct UpdateSettingsView: View {
+    @ObservedObject var checker: UpdateChecker
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Codex Relay \(checker.currentVersion)")
+                        .font(.system(size: 10.5, weight: .semibold))
+                    Text("Build \(checker.currentBuild) · Updates from GitHub Releases")
+                        .font(.system(size: 8.5))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button {
+                    checker.check()
+                } label: {
+                    if checker.state == .checking {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text("Check for Updates…")
+                    }
+                }
+                .disabled(checker.state == .checking)
+            }
+
+            switch checker.state {
+            case .idle, .checking:
+                EmptyView()
+            case .upToDate(let latestVersion):
+                Text(latestVersion == checker.currentVersion
+                     ? "You’re running the latest version."
+                     : "No newer public release found. Latest: \(latestVersion).")
+                    .foregroundStyle(.secondary)
+            case .updateAvailable(let release):
+                Button("Open Codex Relay \(release.version) on GitHub") {
+                    checker.openAvailableRelease()
+                }
+                .buttonStyle(.link)
+            case .failed(let message):
+                Text(message)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }
