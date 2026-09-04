@@ -27,6 +27,7 @@ enum CodexRelayMain {
         let failures = RateLimitWindowSelfTest.run()
             + AccountManagementSelfTest.run()
             + UpdateCheckerSelfTest.run()
+            + MenuBarIconSelfTest.run()
         if failures.isEmpty {
             print("Codex Relay self-test: passed")
             exit(EXIT_SUCCESS)
@@ -90,10 +91,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func configureStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = NSImage(
-            systemSymbolName: "gauge.with.dots.needle.67percent",
-            accessibilityDescription: "Codex Relay"
-        )
+        item.button?.image = MenuBarIcon.make()
         item.button?.toolTip = "Codex Relay"
 
         let menu = NSMenu()
