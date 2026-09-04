@@ -34,7 +34,11 @@ enum AccountManagementSelfTest {
                 withIntermediateDirectories: true,
                 attributes: [.posixPermissions: 0o700]
             )
-            try Data("self-test".utf8).write(
+            try credentialData(
+                accountID: "self-test-primary",
+                refreshedAt: "2026-01-01T00:00:00Z",
+                refreshToken: "old-refresh"
+            ).write(
                 to: primaryVault.appendingPathComponent("auth.json"),
                 options: .atomic
             )
@@ -71,6 +75,69 @@ enum AccountManagementSelfTest {
             } catch {
                 failures.append("active profile removal returned the wrong error")
             }
+
+            let duplicate = try store.createIsolatedProfile(named: "Duplicate")
+            let duplicateCredentialURL = URL(
+                fileURLWithPath: duplicate.codexHomePath!,
+                isDirectory: true
+            ).appendingPathComponent("auth.json")
+            try credentialData(
+                accountID: "self-test-primary",
+                refreshedAt: "2026-02-01T00:00:00Z",
+                refreshToken: "new-refresh"
+            ).write(to: duplicateCredentialURL, options: .atomic)
+            _ = store.updateIdentity(
+                for: duplicate.id,
+                email: "person@example.com",
+                planType: "prolite",
+                lastUpdated: Date()
+            )
+            store.select(duplicate.id)
+            store.markDesktopProfile(duplicate.id)
+
+            let reconciliation = store.reconcileCredentialIdentity(for: duplicate.id)
+            expect(
+                reconciliation.canonicalProfileID == AccountProfile.current.id,
+                "duplicate account did not merge into primary profile"
+            )
+            expect(
+                reconciliation.removedProfileIDs == [duplicate.id],
+                "duplicate reconciliation reported the wrong removed profile"
+            )
+            expect(
+                !store.profiles.contains(where: { $0.id == duplicate.id }),
+                "duplicate account remained in the profile list"
+            )
+            expect(
+                store.selectedProfileID == AccountProfile.current.id,
+                "selected duplicate was not remapped to primary"
+            )
+            expect(
+                store.desktopProfileID == AccountProfile.current.id,
+                "desktop duplicate was not remapped to primary"
+            )
+            let mergedCredential = try Data(
+                contentsOf: store.credentialURL(for: AccountProfile.current.id)!
+            )
+            expect(
+                String(decoding: mergedCredential, as: UTF8.self).contains("new-refresh"),
+                "newest credential did not survive duplicate merge"
+            )
+            expect(
+                store.selectedProfile.planType == "prolite",
+                "newest account metadata did not survive duplicate merge"
+            )
+
+            try store.signOut(AccountProfile.current.id)
+            expect(
+                !store.hasCredential(for: AccountProfile.current.id),
+                "sign out left the account credential in its vault"
+            )
+            expect(
+                store.profiles.contains(where: { $0.id == AccountProfile.current.id }),
+                "sign out removed the profile itself"
+            )
+            expect(store.desktopProfileID == nil, "sign out kept a desktop account marker")
         } catch {
             failures.append("account management self-test failed: \(error.localizedDescription)")
         }
@@ -124,6 +191,26 @@ enum AccountManagementSelfTest {
             failures.append("settings self-test suite could not be created")
         }
 
+        expect(CodexPlan.displayName("prolite") == "PRO", "prolite plan label was exposed")
+        expect(CodexPlan.displayName("plus") == "PLUS", "plus plan label is wrong")
+
         return failures
+    }
+
+    private static func credentialData(
+        accountID: String,
+        refreshedAt: String,
+        refreshToken: String
+    ) throws -> Data {
+        try JSONSerialization.data(withJSONObject: [
+            "auth_mode": "chatgpt",
+            "last_refresh": refreshedAt,
+            "tokens": [
+                "account_id": accountID,
+                "access_token": "self-test-access",
+                "id_token": "self-test-id",
+                "refresh_token": refreshToken
+            ]
+        ], options: [.sortedKeys])
     }
 }

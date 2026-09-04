@@ -121,6 +121,58 @@ final class CodexDesktopController {
         runningApplications.first?.activate(options: [.activateIgnoringOtherApps])
     }
 
+    func signOut(
+        profile: AccountProfile,
+        quitTimeout: TimeInterval = 12,
+        launchTimeout: TimeInterval = 15
+    ) async throws {
+        let appURL = try locateApplication()
+        let sharedCodexHomeURL = try resolveSharedCodexHome()
+        let sharedCredentialURL = sharedCodexHomeURL.appendingPathComponent("auth.json")
+        let profileCredentialURL = try credentialURL(for: profile)
+        let previousSharedCredential = try? Data(contentsOf: sharedCredentialURL)
+        let previousProfileCredential = try? Data(contentsOf: profileCredentialURL)
+        let applications = runningApplications
+        let shouldRelaunch = !applications.isEmpty
+
+        if shouldRelaunch {
+            guard applications.allSatisfy({ $0.terminate() }) else {
+                throw CodexDesktopError.quitRejected
+            }
+            let quitDeadline = Date().addingTimeInterval(quitTimeout)
+            while applications.contains(where: { !$0.isTerminated }) {
+                guard Date() < quitDeadline else {
+                    throw CodexDesktopError.quitTimedOut
+                }
+                try await Task.sleep(nanoseconds: 150_000_000)
+            }
+        }
+
+        do {
+            try removeCredential(at: sharedCredentialURL)
+            try removeCredential(at: profileCredentialURL)
+            if shouldRelaunch {
+                try await launch(
+                    appURL: appURL,
+                    codexHomeURL: sharedCodexHomeURL,
+                    launchTimeout: launchTimeout
+                )
+                runningApplications.first?.activate(options: [.activateIgnoringOtherApps])
+            }
+        } catch {
+            try? restoreCredential(previousSharedCredential, to: sharedCredentialURL)
+            try? restoreCredential(previousProfileCredential, to: profileCredentialURL)
+            if shouldRelaunch {
+                try? await launch(
+                    appURL: appURL,
+                    codexHomeURL: sharedCodexHomeURL,
+                    launchTimeout: launchTimeout
+                )
+            }
+            throw error
+        }
+    }
+
     nonisolated static func openArguments(
         appURL: URL,
         codexHomeURL: URL
@@ -188,6 +240,15 @@ final class CodexDesktopController {
             } catch {
                 throw CodexDesktopError.credentialSwapFailed(error.localizedDescription)
             }
+        }
+    }
+
+    private func removeCredential(at url: URL) throws {
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        do {
+            try fileManager.removeItem(at: url)
+        } catch {
+            throw CodexDesktopError.credentialSwapFailed(error.localizedDescription)
         }
     }
 

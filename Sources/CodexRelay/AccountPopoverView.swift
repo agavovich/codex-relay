@@ -9,11 +9,13 @@ private struct PendingSwitch {
 private enum AccountPopoverAlert: Identifiable {
     case switchAccount(PendingSwitch)
     case remove(AccountProfile)
+    case signOut(AccountProfile)
 
     var id: String {
         switch self {
         case .switchAccount(let pending): return "switch-\(pending.profile.id)"
         case .remove(let profile): return "remove-\(profile.id)"
+        case .signOut(let profile): return "sign-out-\(profile.id)"
         }
     }
 }
@@ -298,6 +300,7 @@ struct AccountPopoverView: View {
         let isDesktopActive = store.isActiveInCodex(profile.id)
         let isSigningIn = store.loginProfileID == profile.id
         let isSwitching = store.switchingProfileID == profile.id
+        let isSigningOut = store.signingOutProfileID == profile.id
         let needsSignIn = !store.hasCredential(for: profile.id)
         let windows = state?.snapshot?.displayWindows ?? []
 
@@ -343,8 +346,8 @@ struct AccountPopoverView: View {
 
                     Spacer(minLength: 3)
 
-                    if let plan = state?.planType ?? profile.planType {
-                        badge(plan.uppercased(), color: .secondary)
+                    if let plan = CodexPlan.displayName(state?.planType ?? profile.planType) {
+                        badge(plan, color: .secondary)
                     }
                     if isDesktopActive {
                         badge("ACTIVE", color: .mint)
@@ -354,7 +357,15 @@ struct AccountPopoverView: View {
                 }
             }
 
-            if isSigningIn || isSwitching || needsSignIn || state?.account == nil {
+            if isSigningOut {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Signing out…")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+            } else if isSigningIn || isSwitching || needsSignIn || state?.account == nil {
                 accountActionState(
                     profile: profile,
                     isSigningIn: isSigningIn,
@@ -415,6 +426,13 @@ struct AccountPopoverView: View {
         Menu {
             Button("Rename…") { beginRename(profile) }
             Button("Sign In Again…") { store.signIn(to: profile.id) }
+
+            if store.hasCredential(for: profile.id) {
+                Button("Sign Out…") {
+                    pendingAlert = .signOut(profile)
+                }
+                .disabled(store.isSwitchingCodex || store.isAddingAccount)
+            }
 
             Divider()
 
@@ -661,6 +679,19 @@ struct AccountPopoverView: View {
                               + "Shared Codex projects and history will remain intact."),
                 primaryButton: .destructive(Text("Remove")) {
                     store.removeProfile(profile.id)
+                },
+                secondaryButton: .cancel()
+            )
+
+        case .signOut(let profile):
+            let active = store.isActiveInCodex(profile.id)
+            return Alert(
+                title: Text("Sign out of \(profile.displayName)?"),
+                message: Text(active
+                    ? "Codex will restart signed out. Local projects, history, and settings will remain on this Mac."
+                    : "The stored sign-in for this profile will be removed. Local projects, history, and settings will remain."),
+                primaryButton: .destructive(Text("Sign Out")) {
+                    store.signOut(profile.id)
                 },
                 secondaryButton: .cancel()
             )

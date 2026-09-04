@@ -22,6 +22,7 @@ struct AccountProfile: Codable, Equatable, Identifiable {
         id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
         displayName: "Primary",
         codexHomePath: nil,
+        accountID: nil,
         email: nil,
         planType: nil,
         lastUpdated: nil,
@@ -31,6 +32,7 @@ struct AccountProfile: Codable, Equatable, Identifiable {
     let id: UUID
     var displayName: String
     var codexHomePath: String?
+    var accountID: String?
     var email: String?
     var planType: String?
     var lastUpdated: Date?
@@ -47,6 +49,11 @@ struct AccountProfile: Codable, Equatable, Identifiable {
 
 @MainActor
 final class AccountProfileStore: ObservableObject {
+    struct ReconciliationResult: Equatable {
+        let canonicalProfileID: UUID
+        let removedProfileIDs: Set<UUID>
+    }
+
     @Published private(set) var profiles: [AccountProfile]
     @Published private(set) var selectedProfileID: UUID
     @Published private(set) var persistenceError: String?
@@ -152,6 +159,7 @@ final class AccountProfileStore: ObservableObject {
         }
 
         migratePrimaryCredentialVault()
+        reconcileAllCredentialIdentities()
         persist()
     }
 
@@ -191,6 +199,12 @@ final class AccountProfileStore: ObservableObject {
     func markDesktopProfile(_ profileID: UUID) {
         guard profiles.contains(where: { $0.id == profileID }) else { return }
         desktopProfileID = profileID
+        persist()
+    }
+
+    func clearDesktopProfile(ifMatches profileID: UUID? = nil) {
+        if let profileID, desktopProfileID != profileID { return }
+        desktopProfileID = nil
         persist()
     }
 
@@ -250,6 +264,39 @@ final class AccountProfileStore: ObservableObject {
     }
 
     @discardableResult
+    func reconcileCredentialIdentity(for profileID: UUID) -> ReconciliationResult {
+        guard profiles.contains(where: { $0.id == profileID }) else {
+            return ReconciliationResult(
+                canonicalProfileID: profileID,
+                removedProfileIDs: []
+            )
+        }
+
+        refreshStoredAccountIDs()
+        let result = mergeDuplicates(containing: profileID)
+        persist()
+        return result
+    }
+
+    func signOut(_ profileID: UUID) throws {
+        guard let credentialURL = credentialURL(for: profileID),
+              let index = profiles.firstIndex(where: { $0.id == profileID }) else {
+            throw AccountProfileStoreError.invalidProfileDirectory
+        }
+
+        if fileManager.fileExists(atPath: credentialURL.path) {
+            try fileManager.removeItem(at: credentialURL)
+        }
+        profiles[index].accountID = nil
+        profiles[index].planType = nil
+        profiles[index].lastUpdated = nil
+        if desktopProfileID == profileID {
+            desktopProfileID = nil
+        }
+        persist()
+    }
+
+    @discardableResult
     func updateIdentity(
         for profileID: UUID,
         email: String?,
@@ -296,6 +343,7 @@ final class AccountProfileStore: ObservableObject {
             id: id,
             displayName: trimmedName.isEmpty ? "Account \(profiles.count + 1)" : trimmedName,
             codexHomePath: codexHome.path,
+            accountID: nil,
             email: nil,
             planType: nil,
             lastUpdated: nil,
@@ -305,6 +353,146 @@ final class AccountProfileStore: ObservableObject {
         profiles.append(profile)
         persist()
         return profile
+    }
+
+    private func reconcileAllCredentialIdentities() {
+        refreshStoredAccountIDs()
+        let duplicateAccountIDs = Dictionary(grouping: profiles.compactMap { profile in
+            profile.accountID.map { ($0, profile.id) }
+        }, by: \.0)
+            .filter { $0.value.count > 1 }
+            .keys
+
+        for accountID in duplicateAccountIDs {
+            guard let profileID = profiles.first(where: { $0.accountID == accountID })?.id else {
+                continue
+            }
+            _ = mergeDuplicates(containing: profileID)
+        }
+    }
+
+    private func refreshStoredAccountIDs() {
+        for index in profiles.indices {
+            guard let credentialURL = credentialURL(for: profiles[index].id),
+                  let accountID = credentialMetadata(at: credentialURL)?.accountID else {
+                continue
+            }
+            profiles[index].accountID = accountID
+        }
+    }
+
+    private func mergeDuplicates(containing profileID: UUID) -> ReconciliationResult {
+        guard let profile = profiles.first(where: { $0.id == profileID }),
+              let accountID = profile.accountID else {
+            return ReconciliationResult(
+                canonicalProfileID: profileID,
+                removedProfileIDs: []
+            )
+        }
+
+        let duplicates = profiles.filter { $0.accountID == accountID }
+        guard duplicates.count > 1 else {
+            return ReconciliationResult(
+                canonicalProfileID: profileID,
+                removedProfileIDs: []
+            )
+        }
+
+        let canonical = duplicates.first(where: \.isPrimary)
+            ?? duplicates.min(by: { $0.createdAt < $1.createdAt })!
+        let removed = Set(duplicates.map(\.id).filter { $0 != canonical.id })
+
+        let freshestIdentity = duplicates.max { lhs, rhs in
+            (lhs.lastUpdated ?? .distantPast) < (rhs.lastUpdated ?? .distantPast)
+        } ?? canonical
+        let freshestCredential = duplicates.compactMap { candidate -> (AccountProfile, CredentialMetadata)? in
+            guard let url = credentialURL(for: candidate.id),
+                  let metadata = credentialMetadata(at: url) else { return nil }
+            return (candidate, metadata)
+        }.max { lhs, rhs in
+            lhs.1.refreshedAt < rhs.1.refreshedAt
+        }
+
+        if let source = freshestCredential?.0,
+           source.id != canonical.id,
+           let sourceURL = credentialURL(for: source.id),
+           let destinationURL = credentialURL(for: canonical.id) {
+            try? copyCredential(from: sourceURL, to: destinationURL)
+        }
+
+        if let canonicalIndex = profiles.firstIndex(where: { $0.id == canonical.id }) {
+            profiles[canonicalIndex].accountID = accountID
+            profiles[canonicalIndex].email = freshestIdentity.email ?? canonical.email
+            profiles[canonicalIndex].planType = freshestIdentity.planType ?? canonical.planType
+            profiles[canonicalIndex].lastUpdated = [
+                freshestIdentity.lastUpdated,
+                canonical.lastUpdated
+            ].compactMap { $0 }.max()
+        }
+
+        if removed.contains(selectedProfileID) {
+            selectedProfileID = canonical.id
+        }
+        if let desktopProfileID, removed.contains(desktopProfileID) {
+            self.desktopProfileID = canonical.id
+        }
+
+        for duplicate in duplicates where removed.contains(duplicate.id) {
+            if let path = duplicate.codexHomePath {
+                try? archiveMergedProfileDirectory(
+                    URL(fileURLWithPath: path, isDirectory: true),
+                    profileID: duplicate.id
+                )
+            }
+        }
+        profiles.removeAll { removed.contains($0.id) }
+
+        return ReconciliationResult(
+            canonicalProfileID: canonical.id,
+            removedProfileIDs: removed
+        )
+    }
+
+    private func archiveMergedProfileDirectory(_ sourceURL: URL, profileID: UUID) throws {
+        guard let storageDirectory, fileManager.fileExists(atPath: sourceURL.path) else { return }
+        let archiveRoot = storageDirectory
+            .appendingPathComponent("Merged Profiles", isDirectory: true)
+        try fileManager.createDirectory(
+            at: archiveRoot,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try fileManager.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: archiveRoot.path
+        )
+
+        let destinationURL = archiveRoot
+            .appendingPathComponent(profileID.uuidString, isDirectory: true)
+        guard !fileManager.fileExists(atPath: destinationURL.path) else { return }
+        try fileManager.moveItem(at: sourceURL, to: destinationURL)
+    }
+
+    private struct CredentialMetadata {
+        let accountID: String
+        let refreshedAt: Date
+    }
+
+    private func credentialMetadata(at url: URL) -> CredentialMetadata? {
+        guard let data = try? Data(contentsOf: url),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tokens = object["tokens"] as? [String: Any],
+              let accountID = tokens["account_id"] as? String,
+              !accountID.isEmpty else {
+            return nil
+        }
+
+        let refreshedAt = (object["last_refresh"] as? String)
+            .flatMap(Self.iso8601.date(from:))
+            ?? (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate
+            ?? .distantPast
+        return CredentialMetadata(accountID: accountID, refreshedAt: refreshedAt)
     }
 
     private func migratePrimaryCredentialVault() {
@@ -420,4 +608,6 @@ final class AccountProfileStore: ObservableObject {
         decoder.dateDecodingStrategy = .iso8601
         return decoder
     }()
+
+    private static let iso8601 = ISO8601DateFormatter()
 }

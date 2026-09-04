@@ -1,5 +1,27 @@
 import Foundation
 
+enum CodexPlan {
+    static func displayName(_ rawValue: String?) -> String? {
+        guard let rawValue else { return nil }
+        let normalized = rawValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: " ", with: "")
+
+        switch normalized {
+        case "pro", "prolite": return "PRO"
+        case "plus": return "PLUS"
+        case "free": return "FREE"
+        case "team": return "TEAM"
+        case "business": return "BUSINESS"
+        case "enterprise": return "ENTERPRISE"
+        default: return rawValue.uppercased()
+        }
+    }
+}
+
 struct RateLimitWindow: Codable, Equatable {
     let usedPercent: Double
     let windowDurationMins: Int

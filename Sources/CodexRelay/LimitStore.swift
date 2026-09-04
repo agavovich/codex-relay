@@ -89,6 +89,7 @@ final class LimitStore: ObservableObject {
     @Published private(set) var loginProfileID: UUID?
     @Published private(set) var loginErrorMessage: String?
     @Published private(set) var switchingProfileID: UUID?
+    @Published private(set) var signingOutProfileID: UUID?
     @Published private(set) var switchErrorMessage: String?
     @Published private(set) var accountPopoverRequest = 0
     @Published private(set) var switchRecommendation: AccountSwitchRecommendation?
@@ -160,7 +161,7 @@ final class LimitStore: ObservableObject {
     }
 
     var isSwitchingCodex: Bool {
-        switchingProfileID != nil
+        switchingProfileID != nil || signingOutProfileID != nil
     }
 
     var isCodexRunning: Bool {
@@ -210,7 +211,7 @@ final class LimitStore: ObservableObject {
     }
 
     func refresh() {
-        guard !isRefreshing else { return }
+        guard !isRefreshing, signingOutProfileID == nil else { return }
         isRefreshing = true
         nextRefreshAt = Date().addingTimeInterval(settings.refreshInterval)
 
@@ -243,6 +244,7 @@ final class LimitStore: ObservableObject {
 
     func activateProfileInCodex(_ profileID: UUID, forceRestart: Bool = false) {
         guard switchingProfileID == nil,
+              signingOutProfileID == nil,
               loginProfileID == nil,
               let profile = profileStore.profiles.first(where: { $0.id == profileID }) else {
             return
@@ -298,11 +300,11 @@ final class LimitStore: ObservableObject {
     }
 
     func addAccount() {
-        guard loginProfileID == nil else { return }
+        guard loginProfileID == nil, signingOutProfileID == nil else { return }
 
         do {
             let profile = try profileStore.createIsolatedProfile(named: "")
-            startLogin(for: profile)
+            startLogin(for: profile, removeProfileOnFailure: true)
         } catch {
             loginErrorMessage = error.localizedDescription
         }
@@ -310,11 +312,12 @@ final class LimitStore: ObservableObject {
 
     func signIn(to profileID: UUID) {
         guard loginProfileID == nil,
+              signingOutProfileID == nil,
               let profile = profileStore.profiles.first(where: { $0.id == profileID }),
               !profile.usesCurrentCodexHome else {
             return
         }
-        startLogin(for: profile)
+        startLogin(for: profile, removeProfileOnFailure: false)
     }
 
     func renameProfile(_ profileID: UUID, to displayName: String) {
@@ -339,11 +342,44 @@ final class LimitStore: ObservableObject {
         }
     }
 
+    func signOut(_ profileID: UUID) {
+        guard signingOutProfileID == nil,
+              switchingProfileID == nil,
+              loginProfileID == nil,
+              let profile = profileStore.profiles.first(where: { $0.id == profileID }) else {
+            return
+        }
+
+        signingOutProfileID = profileID
+        managementErrorMessage = nil
+        Task {
+            do {
+                if profileStore.desktopProfileID == profileID {
+                    try await desktopController.signOut(profile: profile)
+                }
+                try profileStore.signOut(profileID)
+                profileStates[profileID] = ProfileLimitState(errorMessage: "Signed out")
+                if reauthenticatedProfileID == profileID {
+                    reauthenticatedProfileID = nil
+                }
+                activeProfile = profileStore.selectedProfile
+                publishActiveState()
+                reevaluateSwitchRecommendation()
+            } catch {
+                managementErrorMessage = error.localizedDescription
+            }
+            signingOutProfileID = nil
+        }
+    }
+
     func restartAfterReauthentication(_ profileID: UUID) {
         activateProfileInCodex(profileID, forceRestart: true)
     }
 
-    private func startLogin(for profile: AccountProfile) {
+    private func startLogin(
+        for profile: AccountProfile,
+        removeProfileOnFailure: Bool
+    ) {
         loginProfileID = profile.id
         loginErrorMessage = nil
         profileStates[profile.id] = ProfileLimitState(
@@ -361,9 +397,19 @@ final class LimitStore: ObservableObject {
                     }
                 }.value
 
-                await refreshProfile(profile)
-                if profileStore.desktopProfileID == profile.id {
-                    reauthenticatedProfileID = profile.id
+                let reconciliation = profileStore.reconcileCredentialIdentity(for: profile.id)
+                for removedID in reconciliation.removedProfileIDs {
+                    profileStates.removeValue(forKey: removedID)
+                }
+                guard let resolvedProfile = profileStore.profiles.first(where: {
+                    $0.id == reconciliation.canonicalProfileID
+                }) else {
+                    throw CodexClientError.malformedResponse
+                }
+                activeProfile = profileStore.selectedProfile
+                await refreshProfile(resolvedProfile)
+                if profileStore.desktopProfileID == resolvedProfile.id {
+                    reauthenticatedProfileID = resolvedProfile.id
                 }
                 loginErrorMessage = nil
             } catch {
@@ -371,6 +417,14 @@ final class LimitStore: ObservableObject {
                 state.errorMessage = error.localizedDescription
                 profileStates[profile.id] = state
                 loginErrorMessage = error.localizedDescription
+                if removeProfileOnFailure,
+                   !profileStore.hasCredential(for: profile.id),
+                   profileStore.profiles.contains(where: { $0.id == profile.id }) {
+                    try? profileStore.remove(profile.id)
+                    profileStates.removeValue(forKey: profile.id)
+                    activeProfile = profileStore.selectedProfile
+                    publishActiveState()
+                }
             }
 
             loginProfileID = nil

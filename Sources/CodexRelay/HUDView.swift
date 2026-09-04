@@ -392,7 +392,7 @@ struct HUDView: View {
                     .lineLimit(1)
 
                 HStack(spacing: 4) {
-                    Text(store.planType?.uppercased() ?? "CODEX")
+                    Text(CodexPlan.displayName(store.planType) ?? "CODEX")
                     if store.resetCreditCount > 0 {
                         Text("↻\(store.resetCreditCount)")
                             .foregroundStyle(.mint)
@@ -620,7 +620,7 @@ struct HUDView: View {
             .frame(width: 24, height: 24)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(store.planType?.uppercased() ?? "—")
+                Text(CodexPlan.displayName(store.planType) ?? "—")
                     .font(.system(size: 7.5, weight: .bold, design: .rounded))
                     .foregroundStyle(.secondary)
 
