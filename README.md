@@ -34,8 +34,6 @@ accounts without losing local projects, sessions, or history.
 
 ![Codex Relay beside the macOS Dock](docs/images/codex-relay-dock.jpg)
 
-![Edge Strip, Compact, and Expanded views](docs/images/codex-relay-modes.jpg)
-
 ## Requirements
 
 - macOS 13 Ventura or newer;
