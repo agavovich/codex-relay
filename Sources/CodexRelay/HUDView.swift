@@ -63,6 +63,10 @@ final class HUDPresentationState: ObservableObject {
         updateEdgeHover(panel: hovering)
     }
 
+    func setEdgeHover(strip: Bool, panel: Bool) {
+        updateEdgeHover(strip: strip, panel: panel)
+    }
+
     private func updateEdgeHover(strip: Bool? = nil, panel: Bool? = nil) {
         guard style == .edgeStrip else { return }
         let wasHovering = isEdgeHovering

@@ -39,7 +39,7 @@ enum CodexClientError: LocalizedError {
 }
 
 final class CodexAppServerClient {
-    private static let fallbackVersion = "0.7.0"
+    private static let fallbackVersion = "0.7.1"
     private let fileManager = FileManager.default
 
     private var clientVersion: String {

@@ -12,6 +12,22 @@ enum AccountManagementSelfTest {
             if !condition() { failures.append(message) }
         }
 
+        let hoverState = HUDPresentationState(style: .edgeStrip)
+        for _ in 0..<100 {
+            hoverState.setEdgeHover(strip: true, panel: false)
+            expect(hoverState.isExpanded, "strip entry did not open immediately")
+            hoverState.setEdgeHover(strip: false, panel: true)
+            expect(hoverState.isExpanded, "crossing into controls closed the HUD")
+            hoverState.setPopoverPresented(true)
+            hoverState.setEdgeHover(strip: false, panel: false)
+            expect(hoverState.isExpanded, "popover lost its anchor on pointer exit")
+            hoverState.setPopoverPresented(false)
+            expect(!hoverState.isExpanded, "HUD stayed open after popover dismissal")
+            hoverState.setEdgeHover(strip: true, panel: false)
+            hoverState.setEdgeHover(strip: false, panel: false)
+            expect(!hoverState.isExpanded, "fast strip exit left HUD expanded")
+        }
+
         expect(
             HUDMetrics.expandedBaseWidth(windowCount: 1) < HUDMetrics.baseWidth,
             "single-window HUD was not narrowed"

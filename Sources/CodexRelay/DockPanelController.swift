@@ -171,6 +171,7 @@ final class DockPanelController {
     private let screenEdgeInset: CGFloat = 5
     private let edgePanelGap: CGFloat = 0
     private var placementTimer: Timer?
+    private var edgeHoverTimer: Timer?
     private var observers: [NSObjectProtocol] = []
     private var manuallyHidden = false
     private var restoredDetachedPosition = false
@@ -199,6 +200,7 @@ final class DockPanelController {
         )
 
         panel.isOpaque = false
+        panel.animationBehavior = .none
         panel.backgroundColor = .clear
         panel.hasShadow = presentationState.isExpanded && store.settings.hudStyle != .edgeStrip
         panel.hidesOnDeactivate = false
@@ -223,6 +225,7 @@ final class DockPanelController {
             defer: false
         )
         edgeStripPanel.isOpaque = false
+        edgeStripPanel.animationBehavior = .none
         edgeStripPanel.backgroundColor = .clear
         edgeStripPanel.hasShadow = false
         edgeStripPanel.hidesOnDeactivate = false
@@ -332,6 +335,7 @@ final class DockPanelController {
 
     deinit {
         placementTimer?.invalidate()
+        edgeHoverTimer?.invalidate()
         observers.forEach(NotificationCenter.default.removeObserver)
     }
 
@@ -359,7 +363,18 @@ final class DockPanelController {
 
     private func setExpanded(_ expanded: Bool) {
         if store.settings.hudStyle == .edgeStrip {
-            repositionEdgeWindows(animated: false)
+            // @Published emits before its stored value changes. Use the
+            // delivered value, otherwise the one-second timer applies it late.
+            repositionEdgeWindows(animated: false, expanded: expanded)
+            edgeHoverTimer?.invalidate()
+            edgeHoverTimer = nil
+            if expanded {
+                let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.reconcileEdgeHover() }
+                }
+                RunLoop.main.add(timer, forMode: .common)
+                edgeHoverTimer = timer
+            }
             return
         }
         panel.hasShadow = expanded
@@ -368,38 +383,26 @@ final class DockPanelController {
     }
 
     private func handleEdgeStripHover(_ hovering: Bool) {
-        guard store.settings.hudStyle == .edgeStrip else { return }
-        if hovering {
-            presentationState.setEdgeStripHovering(true)
-            return
-        }
-
-        // Panels touch. Mark the destination first when the pointer crosses
-        // the seam, so the detail window never needs a timing grace period.
-        let panelSeamFrame = panel.frame.insetBy(dx: -0.5, dy: 0)
-        if panel.alphaValue > 0, panelSeamFrame.contains(NSEvent.mouseLocation) {
-            presentationState.setEdgePanelHovering(true)
-        }
-        presentationState.setEdgeStripHovering(false)
+        reconcileEdgeHover()
     }
 
     private func handleEdgePanelHover(_ hovering: Bool) {
-        guard store.settings.hudStyle == .edgeStrip else { return }
-        if hovering {
-            guard panel.alphaValue > 0, !panel.ignoresMouseEvents else { return }
-            presentationState.setEdgePanelHovering(true)
-            return
-        }
+        reconcileEdgeHover()
+    }
 
-        let stripTrackingFrame = edgeStripPanel.frame
-            .insetBy(dx: -0.5, dy: 6)
-        if stripTrackingFrame.contains(NSEvent.mouseLocation) {
-            presentationState.setEdgeStripHovering(true)
-        }
-        presentationState.setEdgePanelHovering(false)
+    private func reconcileEdgeHover() {
+        guard store.settings.hudStyle == .edgeStrip else { return }
+        let point = NSEvent.mouseLocation
+        presentationState.setEdgeHover(
+            strip: edgeStripPanel.isVisible && edgeStripPanel.frame.insetBy(dx: 0, dy: 6).contains(point),
+            panel: panel.isVisible && panel.alphaValue > 0 && !panel.ignoresMouseEvents
+                && panel.frame.contains(point)
+        )
     }
 
     private func setStyle(_ style: HUDStyle) {
+        edgeHoverTimer?.invalidate()
+        edgeHoverTimer = nil
         presentationState.setStyle(style)
         panelContentView.setPopoverMaterialEnabled(false)
         restoredRightEdgePosition = false
@@ -604,7 +607,7 @@ final class DockPanelController {
         }
     }
 
-    private func repositionEdgeWindows(animated _: Bool) {
+    private func repositionEdgeWindows(animated _: Bool, expanded: Bool? = nil) {
         guard let screen = preferredScreen() else { return }
 
         let visibleFrame = screen.visibleFrame
@@ -637,7 +640,7 @@ final class DockPanelController {
             edgeStripPanel.setFrame(stripFrame, display: true)
         }
 
-        if presentationState.isExpanded {
+        if expanded ?? presentationState.isExpanded {
             showEdgeDetail(at: detailFrame)
         } else {
             hideEdgeDetail(from: detailFrame)
@@ -646,7 +649,9 @@ final class DockPanelController {
 
     private func showEdgeDetail(at finalFrame: NSRect) {
         panel.level = NSWindow.Level(rawValue: edgeStripPanel.level.rawValue + 1)
-        panel.setFrame(finalFrame, display: true)
+        if !panel.frame.nearlyEquals(finalFrame) {
+            panel.setFrame(finalFrame, display: true)
+        }
         if !panel.isVisible {
             panel.orderFrontRegardless()
         }
@@ -658,7 +663,9 @@ final class DockPanelController {
     }
 
     private func hideEdgeDetail(from finalFrame: NSRect) {
-        panel.setFrame(finalFrame, display: true)
+        if !panel.frame.nearlyEquals(finalFrame) {
+            panel.setFrame(finalFrame, display: true)
+        }
         panelContentView.setHoverTrackingEnabled(false)
         panel.ignoresMouseEvents = true
         panel.alphaValue = 0
