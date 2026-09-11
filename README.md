@@ -26,6 +26,9 @@ accounts without losing local projects, sessions, or history.
 - every limit window currently reported by Codex;
 - reset countdowns and available free reset credits;
 - optional low-limit and reset notifications;
+- 20 interface languages, automatic macOS language matching, and an instant manual override;
+- locally recorded subscription paid-through date and remaining days;
+- Pro tier labels (×5 and ×20) in the HUD and account details;
 - multiple local account profiles in one list;
 - account recommendations when the current limit runs out;
 - account switching while keeping the same local Codex data;
@@ -71,6 +74,29 @@ swift build -c release
 .build/release/CodexRelay --self-test
 ```
 
+## Interface language
+
+On first launch, **System language** chooses the first supported language in your
+macOS language preferences, with English as the fallback. Choose **Settings →
+App → Language** to override it without restarting; the choice survives relaunch.
+Selecting **System language** restores automatic matching. All translations are
+bundled with the app and work offline.
+
+Supported: English, Russian, Spanish, French, German, Brazilian Portuguese,
+Simplified Chinese, Traditional Chinese, Japanese, Korean, Italian, Turkish,
+Arabic, Hindi, Indonesian, Vietnamese, Thai, Polish, Ukrainian, and Dutch.
+Regional variants map to the supported language; Portuguese uses Brazilian
+Portuguese. Chinese script preferences take priority over region. Arabic uses
+right-to-left content while the Edge Strip stays on the physical right edge.
+
+Dates and durations use the selected locale. User account names, email addresses,
+plan names, external release notes, and raw upstream diagnostic details are not
+translated. Translation wording has not yet been reviewed by native speakers
+for every language.
+
+Developers can validate the bundled catalog with
+`python3 scripts/check-localizations.py` and the app's `--self-test` command.
+
 ## Multiple accounts
 
 Open the HUD and choose **Add Account…**. Codex Relay creates an isolated local
@@ -93,8 +119,10 @@ Account credentials and profile information stay locally in:
 ```
 
 Credential directories use `700` permissions and credential files use `600`.
-Codex Relay treats `auth.json` as opaque data: it does not parse, log, or upload
-its contents. The official Codex app still communicates with OpenAI as usual.
+Codex Relay reads local credential metadata for account identity and the paid-through
+date recorded at sign-in. It does not log or upload credentials. The paid-through
+date can be stale after billing changes and does not indicate automatic renewal
+status. The official Codex app still communicates with OpenAI as usual.
 When you choose **Check for Updates…**, Relay sends a standard request containing
 only its current version to the public GitHub Releases API.
 

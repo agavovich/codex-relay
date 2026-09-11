@@ -21,6 +21,7 @@ private enum AccountPopoverAlert: Identifiable {
 }
 
 struct AccountPopoverView: View {
+    @Environment(\.locale) private var interfaceLocale
     @ObservedObject var store: LimitStore
     let onSelect: () -> Void
 
@@ -45,13 +46,15 @@ struct AccountPopoverView: View {
             Divider()
 
             if showingSettings {
-                settingsContent
+                settingsContent.id(L10n.language)
             } else {
-                accountsContent
+                accountsContent.id(L10n.language)
             }
         }
         .padding(13)
-        .frame(width: 360)
+        .frame(width: L10n.language == "en" ? 360 : 410)
+        .environment(\.locale, L10n.locale)
+        .environment(\.layoutDirection, L10n.direction)
         .alert(item: $pendingAlert, content: alert)
     }
 
@@ -64,15 +67,15 @@ struct AccountPopoverView: View {
                     Image(systemName: "chevron.left")
                 }
                 .buttonStyle(.borderless)
-                .help("Back to accounts")
+                .help(L10n.tr("Back to accounts"))
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(showingSettings ? "Settings" : "Accounts")
+                Text(showingSettings ? L10n.tr("Settings") : L10n.tr("Accounts"))
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                 Text(showingSettings
-                     ? "HUD, alerts, accounts, and app behavior"
-                     : "Switch the Codex account and its limits")
+                     ? L10n.tr("HUD, alerts, accounts, and app behavior")
+                     : L10n.tr("Switch the Codex account and its limits"))
                     .font(.system(size: 9.5))
                     .foregroundStyle(.secondary)
             }
@@ -92,7 +95,7 @@ struct AccountPopoverView: View {
                     }
                 }
                 .buttonStyle(.borderless)
-                .help("Refresh all accounts")
+                .help(L10n.tr("Refresh all accounts"))
                 .disabled(store.isRefreshing)
 
                 Button {
@@ -101,7 +104,7 @@ struct AccountPopoverView: View {
                     Image(systemName: "gearshape")
                 }
                 .buttonStyle(.borderless)
-                .help("Settings")
+                .help(L10n.tr("Settings"))
             }
         }
     }
@@ -132,7 +135,7 @@ struct AccountPopoverView: View {
                     } else {
                         Image(systemName: "plus.circle.fill")
                     }
-                    Text(store.isAddingAccount ? "Waiting for sign-in…" : "Add Account…")
+                    Text(store.isAddingAccount ? L10n.tr("Waiting for sign-in…") : L10n.tr("Add Account…"))
                     Spacer()
                 }
                 .frame(maxWidth: .infinity)
@@ -142,7 +145,7 @@ struct AccountPopoverView: View {
 
             errorMessages
 
-            Text("Accounts share your local projects, history, and settings.")
+            Text(L10n.tr("Accounts share your local projects, history, and settings."))
                 .font(.system(size: 9))
                 .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -152,7 +155,7 @@ struct AccountPopoverView: View {
     private var settingsContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 13) {
-                settingsSection("HUD") {
+                settingsSection(L10n.tr("HUD")) {
                     HUDStyleChooser(
                         selection: store.settings.hudStyle,
                         remaining: store.snapshot?.preferredHUDWindow?.remainingPercent ?? 64,
@@ -164,7 +167,7 @@ struct AccountPopoverView: View {
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Picker("Placement", selection: Binding(
+                    Picker(L10n.tr("Placement"), selection: Binding(
                         get: { store.settings.hudPlacement },
                         set: store.settings.setHUDPlacement
                     )) {
@@ -179,50 +182,50 @@ struct AccountPopoverView: View {
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Picker("Refresh limits", selection: $store.settings.refreshInterval) {
+                    Picker(L10n.tr("Refresh limits"), selection: $store.settings.refreshInterval) {
                         ForEach(AppSettings.refreshIntervals, id: \.self) { interval in
                             Text(refreshIntervalTitle(interval)).tag(interval)
                         }
                     }
                 }
 
-                settingsSection("ALERTS") {
-                    Toggle("Enable notifications", isOn: Binding(
+                settingsSection(L10n.tr("ALERTS")) {
+                    Toggle(L10n.tr("Enable notifications"), isOn: Binding(
                         get: { store.settings.notificationsEnabled },
                         set: store.setNotificationsEnabled
                     ))
 
-                    Toggle("Low-limit alert", isOn: $store.settings.notifyLowLimit)
+                    Toggle(L10n.tr("Low-limit alert"), isOn: $store.settings.notifyLowLimit)
                         .disabled(!store.settings.notificationsEnabled)
 
-                    Picker("Alert at", selection: $store.settings.lowLimitThreshold) {
+                    Picker(L10n.tr("Alert at"), selection: $store.settings.lowLimitThreshold) {
                         ForEach(AppSettings.lowLimitThresholds, id: \.self) { value in
                             Text("\(value)%").tag(value)
                         }
                     }
                     .disabled(!store.settings.notificationsEnabled || !store.settings.notifyLowLimit)
 
-                    Toggle("Notify when a limit resets", isOn: $store.settings.notifyOnReset)
+                    Toggle(L10n.tr("Notify when a limit resets"), isOn: $store.settings.notifyOnReset)
                         .disabled(!store.settings.notificationsEnabled)
                 }
 
-                settingsSection("ACCOUNTS & SAFETY") {
-                    Toggle("Open suggestions automatically", isOn: $store.settings.autoOpenRecommendations)
-                    Toggle("Detect visible active tasks", isOn: Binding(
+                settingsSection(L10n.tr("ACCOUNTS & SAFETY")) {
+                    Toggle(L10n.tr("Open suggestions automatically"), isOn: $store.settings.autoOpenRecommendations)
+                    Toggle(L10n.tr("Detect visible active tasks"), isOn: Binding(
                         get: { store.settings.activeTaskDetection },
                         set: store.setActiveTaskDetection
                     ))
 
                     if store.settings.activeTaskDetection {
-                        Text("Uses macOS Accessibility to detect a visible running Codex task before switching accounts.")
+                        Text(L10n.tr("Uses macOS Accessibility to detect a visible running Codex task before switching accounts."))
                             .font(.system(size: 9))
                             .foregroundStyle(.tertiary)
                             .fixedSize(horizontal: false, vertical: true)
 
                         Label(
                             store.settings.accessibilityGranted
-                                ? "Accessibility access granted"
-                                : "Accessibility access not granted",
+                                ? L10n.tr("Accessibility access granted")
+                                : L10n.tr("Accessibility access not granted"),
                             systemImage: store.settings.accessibilityGranted
                                 ? "checkmark.circle.fill"
                                 : "exclamationmark.circle"
@@ -231,18 +234,25 @@ struct AccountPopoverView: View {
                         .foregroundStyle(store.settings.accessibilityGranted ? Color.mint : Color.secondary)
                     }
 
-                    Toggle("Mask email addresses", isOn: $store.settings.maskEmails)
+                    Toggle(L10n.tr("Mask email addresses"), isOn: $store.settings.maskEmails)
                 }
 
-                settingsSection("APP") {
-                    Toggle("Show HUD only while Codex runs", isOn: $store.settings.showOnlyWhileCodexRuns)
-                    Toggle("Launch at Login", isOn: Binding(
+                settingsSection(L10n.tr("APP")) {
+                    Picker(L10n.tr("Language"), selection: $store.settings.language) {
+                        Text(L10n.tr("System language")).tag("system")
+                        ForEach(AppLanguage.all) { language in
+                            Text(verbatim: language.name).tag(language.id)
+                        }
+                    }
+
+                    Toggle(L10n.tr("Show HUD only while Codex runs"), isOn: $store.settings.showOnlyWhileCodexRuns)
+                    Toggle(L10n.tr("Launch at Login"), isOn: Binding(
                         get: { store.settings.launchAtLogin },
                         set: store.settings.setLaunchAtLogin
                     ))
                 }
 
-                settingsSection("ABOUT") {
+                settingsSection(L10n.tr("ABOUT")) {
                     UpdateSettingsView(checker: store.updateChecker)
                 }
 
@@ -260,24 +270,24 @@ struct AccountPopoverView: View {
     private var hudStyleDescription: String {
         switch store.settings.hudStyle {
         case .compact:
-            return "A small ring showing the limit that is currently being used."
+            return L10n.tr("A small ring showing the limit that is currently being used.")
         case .expanded:
-            return "Keeps your plan and all available limits visible beside the Dock."
+            return L10n.tr("Keeps your plan and all available limits visible beside the Dock.")
         case .edgeStrip:
-            return "A thin right-edge indicator. Hover to reveal limits, accounts, and settings."
+            return L10n.tr("A thin right-edge indicator. Hover to reveal limits, accounts, and settings.")
         }
     }
 
     private var hudPlacementDescription: String {
         switch store.settings.hudPlacement {
         case .dock:
-            return "Keeps the HUD aligned beside the Dock."
+            return L10n.tr("Keeps the HUD aligned beside the Dock.")
         case .rightEdge:
             return store.settings.hudStyle == .edgeStrip
-                ? "Edge Strip always stays on the right edge. Drag it vertically to reposition it."
-                : "Keeps the HUD on the right edge. Drag it vertically to reposition it."
+                ? L10n.tr("Edge Strip always stays on the right edge. Drag it vertically to reposition it.")
+                : L10n.tr("Keeps the HUD on the right edge. Drag it vertically to reposition it.")
         case .free:
-            return "Drag the HUD anywhere. Its position is saved."
+            return L10n.tr("Drag the HUD anywhere. Its position is saved.")
         }
     }
 
@@ -315,7 +325,7 @@ struct AccountPopoverView: View {
                     }
 
                 if editingProfileID == profile.id {
-                    TextField("Account name", text: $editedName)
+                    TextField(L10n.tr("Account name"), text: $editedName)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 10.5))
                         .onSubmit { finishRename(profile) }
@@ -341,6 +351,10 @@ struct AccountPopoverView: View {
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
+
+                        if let period = state?.subscriptionPeriod {
+                            SubscriptionPeriodLabel(period: period, now: store.now)
+                        }
                     }
                     .contentShape(Rectangle())
                     .onTapGesture { select(profile) }
@@ -351,7 +365,7 @@ struct AccountPopoverView: View {
                         badge(plan, color: .secondary)
                     }
                     if isDesktopActive {
-                        badge("ACTIVE", color: .mint)
+                        badge(L10n.tr("ACTIVE"), color: .mint)
                     }
 
                     accountMenu(profile, isDesktopActive: isDesktopActive)
@@ -361,7 +375,7 @@ struct AccountPopoverView: View {
             if isSigningOut {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
-                    Text("Signing out…")
+                    Text(L10n.tr("Signing out…"))
                         .font(.system(size: 9.5))
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -386,18 +400,18 @@ struct AccountPopoverView: View {
                     resetCreditCount: state?.resetCreditCount ?? 0
                 )
             } else {
-                Text(state?.errorMessage ?? "No limits reported")
+                Text(state?.errorMessage ?? L10n.tr("No limits reported"))
                     .font(.system(size: 9.5))
                     .foregroundStyle(state?.errorMessage == nil ? Color.secondary : Color.red)
             }
 
             if store.reauthenticatedProfileID == profile.id {
                 HStack(spacing: 5) {
-                    Text("New login is ready")
+                    Text(L10n.tr("New login is ready"))
                         .font(.system(size: 9.2))
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Button("Restart to Apply") {
+                    Button(L10n.tr("Restart to Apply")) {
                         requestSwitch(profile, forceRestart: true)
                     }
                     .font(.system(size: 9, weight: .semibold))
@@ -425,11 +439,11 @@ struct AccountPopoverView: View {
 
     private func accountMenu(_ profile: AccountProfile, isDesktopActive: Bool) -> some View {
         Menu {
-            Button("Rename…") { beginRename(profile) }
-            Button("Sign In Again…") { store.signIn(to: profile.id) }
+            Button(L10n.tr("Rename…")) { beginRename(profile) }
+            Button(L10n.tr("Sign In Again…")) { store.signIn(to: profile.id) }
 
             if store.hasCredential(for: profile.id) {
-                Button("Sign Out…") {
+                Button(L10n.tr("Sign Out…")) {
                     pendingAlert = .signOut(profile)
                 }
                 .disabled(store.isSwitchingCodex || store.isAddingAccount)
@@ -437,7 +451,7 @@ struct AccountPopoverView: View {
 
             Divider()
 
-            Button("Remove Account…", role: .destructive) {
+            Button(L10n.tr("Remove Account…"), role: .destructive) {
                 pendingAlert = .remove(profile)
             }
             .disabled(profile.isPrimary || isDesktopActive)
@@ -474,7 +488,7 @@ struct AccountPopoverView: View {
             Spacer()
 
             if !isSigningIn, !isSwitching, needsSignIn {
-                Button("Sign In") { store.signIn(to: profile.id) }
+                Button(L10n.tr("Sign In")) { store.signIn(to: profile.id) }
                     .font(.system(size: 9.2, weight: .semibold))
                     .buttonStyle(.borderless)
             }
@@ -487,10 +501,10 @@ struct AccountPopoverView: View {
         needsSignIn: Bool,
         error: String?
     ) -> String {
-        if isSwitching { return "Restarting Codex…" }
-        if isSigningIn { return "Complete sign-in in your browser" }
-        if needsSignIn { return "Sign in once to enable this account" }
-        return error ?? "Loading limits…"
+        if isSwitching { return L10n.tr("Restarting Codex…") }
+        if isSigningIn { return L10n.tr("Complete sign-in in your browser") }
+        if needsSignIn { return L10n.tr("Sign in once to enable this account") }
+        return error ?? L10n.tr("Loading limits…")
     }
 
     private func accountAvailability(
@@ -516,23 +530,21 @@ struct AccountPopoverView: View {
                     .font(.system(size: 8.5, weight: .semibold, design: .rounded))
                     .foregroundStyle(.mint)
                     .accessibilityLabel(
-                        "\(resetCreditCount) free rate limit "
-                            + (resetCreditCount == 1 ? "reset" : "resets")
-                            + " available"
+                        L10n.tr("Free resets: \(resetCreditCount)")
                     )
             }
         }
     }
 
     private func resetCreditText(_ count: Int) -> String {
-        "↻\(count) FREE " + (count == 1 ? "RESET" : "RESETS")
+        L10n.tr("Free resets: \(count)")
     }
 
     private func availabilityText(exhausted: Bool, resetDate: Date?) -> String {
-        guard exhausted else { return "READY" }
-        guard let resetDate else { return "LIMITED" }
+        guard exhausted else { return L10n.tr("READY") }
+        guard let resetDate else { return L10n.tr("LIMITED") }
         let countdown = RateLimitCountdown.text(until: resetDate, now: store.now)
-        return countdown == "now" ? "RESET DUE NOW" : "LIMITED · RESET IN \(countdown.uppercased())"
+        return countdown == L10n.tr("now") ? L10n.tr("RESET DUE NOW") : L10n.tr("LIMITED · RESET IN \(countdown.uppercased())")
     }
 
     private func badge(_ text: String, color: Color) -> some View {
@@ -574,7 +586,7 @@ struct AccountPopoverView: View {
                 .frame(width: 19)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(isReady ? "Best account available now" : "Next account resets first")
+                Text(isReady ? L10n.tr("Best account available now") : L10n.tr("Next account resets first"))
                     .font(.system(size: 10.5, weight: .semibold, design: .rounded))
                 Text(recommendationDetail(recommendation, profile: profile))
                     .font(.system(size: 9.5))
@@ -585,7 +597,7 @@ struct AccountPopoverView: View {
             Spacer(minLength: 4)
 
             if isReady {
-                Button("Switch") { select(profile) }
+                Button(L10n.tr("Switch")) { select(profile) }
                     .font(.system(size: 9.5, weight: .semibold))
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -607,7 +619,7 @@ struct AccountPopoverView: View {
         let name = profileLabel(profile)
         guard !recommendation.isAvailable(at: store.now) else { return name }
         let countdown = RateLimitCountdown.text(until: recommendation.availableAt, now: store.now)
-        return "\(name) · ready in \(countdown)"
+        return L10n.tr("\(name) · ready in \(countdown)")
     }
 
     private func profileLabel(_ profile: AccountProfile) -> String {
@@ -660,41 +672,40 @@ struct AccountPopoverView: View {
         case .switchAccount(let pending):
             return Alert(
                 title: Text(pending.activity == .active
-                            ? "Codex is working"
-                            : "Switch Codex account?"),
+                            ? L10n.tr("Codex is working")
+                            : L10n.tr("Switch Codex account?")),
                 message: Text(switchMessage(pending)),
-                primaryButton: .default(Text("Switch & Restart")) {
+                primaryButton: .default(Text(L10n.tr("Switch & Restart"))) {
                     onSelect()
                     store.activateProfileInCodex(
                         pending.profile.id,
                         forceRestart: pending.forceRestart
                     )
                 },
-                secondaryButton: .cancel()
+                secondaryButton: .cancel(Text(L10n.tr("Cancel")))
             )
 
         case .remove(let profile):
             return Alert(
-                title: Text("Remove \(profile.displayName)?"),
-                message: Text("Its local credential vault will be permanently deleted. "
-                              + "Shared Codex projects and history will remain intact."),
-                primaryButton: .destructive(Text("Remove")) {
+                title: Text(L10n.tr("Remove \(profile.displayName)?")),
+                message: Text(L10n.tr("Its local credential vault will be permanently deleted. Shared Codex projects and history will remain intact.")),
+                primaryButton: .destructive(Text(L10n.tr("Remove"))) {
                     store.removeProfile(profile.id)
                 },
-                secondaryButton: .cancel()
+                secondaryButton: .cancel(Text(L10n.tr("Cancel")))
             )
 
         case .signOut(let profile):
             let active = store.isActiveInCodex(profile.id)
             return Alert(
-                title: Text("Sign out of \(profile.displayName)?"),
+                title: Text(L10n.tr("Sign out of \(profile.displayName)?")),
                 message: Text(active
-                    ? "Codex will restart signed out. Local projects, history, and settings will remain on this Mac."
-                    : "The stored sign-in for this profile will be removed. Local projects, history, and settings will remain."),
-                primaryButton: .destructive(Text("Sign Out")) {
+                    ? L10n.tr("Codex will restart signed out. Local projects, history, and settings will remain on this Mac.")
+                    : L10n.tr("The stored sign-in for this profile will be removed. Local projects, history, and settings will remain.")),
+                primaryButton: .destructive(Text(L10n.tr("Sign Out"))) {
                     store.signOut(profile.id)
                 },
-                secondaryButton: .cancel()
+                secondaryButton: .cancel(Text(L10n.tr("Cancel")))
             )
         }
     }
@@ -703,27 +714,26 @@ struct AccountPopoverView: View {
         let account = profileLabel(pending.profile)
         switch pending.activity {
         case .active:
-            return "A visible Codex task is currently running. Switching to \(account) "
-                + "will interrupt it, but its history will remain available."
+            return L10n.tr("A visible Codex task is currently running. Switching to \(account) will interrupt it, but its history will remain available.")
         case .idle:
-            return "Codex will close and reopen as \(account). Local projects and history will remain available."
+            return L10n.tr("Codex will close and reopen as \(account). Local projects and history will remain available.")
         case .unknown:
-            return "Codex activity could not be verified. Switching to \(account) may interrupt "
-                + "a running task, but its history will remain available."
+            return L10n.tr("Codex activity could not be verified. Switching to \(account) may interrupt a running task, but its history will remain available.")
         }
     }
 
     private func refreshIntervalTitle(_ interval: TimeInterval) -> String {
         switch interval {
-        case 30: return "30 seconds"
-        case 60: return "1 minute"
-        case 120: return "2 minutes"
-        default: return "5 minutes"
+        case 30: return L10n.tr("30 seconds")
+        case 60: return L10n.tr("1 minute")
+        case 120: return L10n.tr("2 minutes")
+        default: return L10n.tr("5 minutes")
         }
     }
 }
 
 private struct HUDStyleChooser: View {
+    @Environment(\.locale) private var interfaceLocale
     let selection: HUDStyle
     let remaining: Double
     let onSelect: (HUDStyle) -> Void
@@ -768,7 +778,7 @@ private struct HUDStyleChooser: View {
                     .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("\(style.title) HUD")
+                .accessibilityLabel(L10n.tr("\(style.title) HUD"))
                 .accessibilityAddTraits(selection == style ? .isSelected : [])
             }
         }
@@ -776,6 +786,7 @@ private struct HUDStyleChooser: View {
 }
 
 private struct HUDStylePreview: View {
+    @Environment(\.locale) private var interfaceLocale
     let style: HUDStyle
     let remaining: Double
 
@@ -911,6 +922,7 @@ private struct HUDStylePreview: View {
 }
 
 private struct UpdateSettingsView: View {
+    @Environment(\.locale) private var interfaceLocale
     @ObservedObject var checker: UpdateChecker
 
     var body: some View {
@@ -919,7 +931,7 @@ private struct UpdateSettingsView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Codex Relay \(checker.currentVersion)")
                         .font(.system(size: 10.5, weight: .semibold))
-                    Text("Build \(checker.currentBuild) · Updates from GitHub Releases")
+                    Text(L10n.tr("Build \(checker.currentBuild) · Updates from GitHub Releases"))
                         .font(.system(size: 8.5))
                         .foregroundStyle(.secondary)
                 }
@@ -933,7 +945,7 @@ private struct UpdateSettingsView: View {
                         ProgressView()
                             .controlSize(.small)
                     } else {
-                        Text("Check for Updates…")
+                        Text(L10n.tr("Check for Updates…"))
                     }
                 }
                 .disabled(checker.state == .checking)
@@ -944,11 +956,11 @@ private struct UpdateSettingsView: View {
                 EmptyView()
             case .upToDate(let latestVersion):
                 Text(latestVersion == checker.currentVersion
-                     ? "You’re running the latest version."
-                     : "No newer public release found. Latest: \(latestVersion).")
+                     ? L10n.tr("You’re running the latest version.")
+                     : L10n.tr("No newer public release found. Latest: \(latestVersion)."))
                     .foregroundStyle(.secondary)
             case .updateAvailable(let release):
-                Button("Open Codex Relay \(release.version) on GitHub") {
+                Button(L10n.tr("Open Codex Relay \(release.version) on GitHub")) {
                     checker.openAvailableRelease()
                 }
                 .buttonStyle(.link)
@@ -962,6 +974,7 @@ private struct UpdateSettingsView: View {
 }
 
 private struct AccountWindowCell: View {
+    @Environment(\.locale) private var interfaceLocale
     let window: RateLimitWindow
     let now: Date
 

@@ -37,7 +37,7 @@ enum AccountManagementSelfTest {
             "two-window HUD width changed"
         )
         expect(
-            HUDMetrics.expandedBaseWidth(windowCount: 1) == 220,
+            HUDMetrics.expandedBaseWidth(windowCount: 1) == 236,
             "single-window HUD sections are not balanced"
         )
 
@@ -202,15 +202,31 @@ enum AccountManagementSelfTest {
             )
             restoredSettings.setHUDStyle(.compact)
             expect(
-                restoredSettings.hudPlacement == .free,
-                "leaving Edge Strip should restore the previous placement"
+                restoredSettings.hudPlacement == .dock,
+                "leaving Edge Strip should place Compact beside the Dock"
+            )
+            restoredSettings.setHUDPlacement(.rightEdge)
+            restoredSettings.setHUDStyle(.edgeStrip)
+            let reloadedEdgeSettings = AppSettings(defaults: defaults)
+            reloadedEdgeSettings.setHUDStyle(.expanded)
+            expect(
+                reloadedEdgeSettings.hudPlacement == .dock,
+                "Expanded inherited the strip placement after restart"
+            )
+            expect(
+                reloadedEdgeSettings.edgeHUDCenterY == 440,
+                "switching to Dock discarded the strip's vertical position"
             )
             defaults.removePersistentDomain(forName: suiteName)
         } else {
             failures.append("settings self-test suite could not be created")
         }
 
-        expect(CodexPlan.displayName("prolite") == "PRO", "prolite plan label was exposed")
+        expect(CodexPlan.displayName("prolite") == "PRO ×5", "Pro 5x tier is missing")
+        expect(CodexPlan.displayName("pro") == "PRO ×20", "Pro 20x tier is missing")
+        expect(CodexPlan.displayName(" Pro_Lite ") == "PRO ×5", "Pro Lite normalization failed")
+        expect(CodexPlan.displayName(nil) == nil, "missing plan must remain unknown")
+        expect(CodexPlan.displayName("future") == "FUTURE", "unknown plan must not invent a multiplier")
         expect(CodexPlan.displayName("plus") == "PLUS", "plus plan label is wrong")
 
         return failures

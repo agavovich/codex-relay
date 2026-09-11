@@ -11,7 +11,8 @@ enum CodexPlan {
             .replacingOccurrences(of: " ", with: "")
 
         switch normalized {
-        case "pro", "prolite": return "PRO"
+        case "pro": return "PRO ×20"
+        case "prolite": return "PRO ×5"
         case "plus": return "PLUS"
         case "free": return "FREE"
         case "team": return "TEAM"
@@ -53,14 +54,19 @@ enum RateLimitCountdown {
 
     static func text(until date: Date, now: Date) -> String {
         let seconds = date.timeIntervalSince(now)
-        guard seconds > 0 else { return "now" }
-        if seconds < 60 { return "<1m" }
+        guard seconds > 0 else { return L10n.tr("now") }
+        if seconds < 60 { return L10n.language == "en" ? "<1m" : "<" + L10n.duration(1, unit: .minute) }
 
         let totalMinutes = Int(ceil(seconds / 60))
         let days = totalMinutes / 1_440
         let hours = (totalMinutes % 1_440) / 60
         let minutes = totalMinutes % 60
 
+        if L10n.language != "en" {
+            if days > 0 { return L10n.duration(days, unit: .day) + " " + L10n.duration(hours, unit: .hour) }
+            if hours > 0 { return L10n.duration(hours, unit: .hour) + " " + L10n.duration(minutes, unit: .minute) }
+            return L10n.duration(minutes, unit: .minute)
+        }
         if days > 0 {
             return "\(days)d \(hours)h"
         }
@@ -73,10 +79,15 @@ enum RateLimitCountdown {
     static func compactText(until timestamp: TimeInterval?, now: Date) -> String {
         guard let timestamp else { return "—" }
         let seconds = timestamp - now.timeIntervalSince1970
-        guard seconds > 0 else { return "NOW" }
-        if seconds < 60 { return "<1m" }
+        guard seconds > 0 else { return L10n.tr("NOW") }
+        if seconds < 60 { return L10n.language == "en" ? "<1m" : "<" + L10n.duration(1, unit: .minute) }
 
         let totalMinutes = Int(ceil(seconds / 60))
+        if L10n.language != "en" {
+            if totalMinutes >= 1_440 { return L10n.duration(totalMinutes / 1_440, unit: .day) }
+            if totalMinutes >= 60 { return L10n.duration(totalMinutes / 60, unit: .hour) }
+            return L10n.duration(totalMinutes, unit: .minute)
+        }
         if totalMinutes >= 1_440 {
             return "\(totalMinutes / 1_440)d"
         }
@@ -92,9 +103,21 @@ enum RateLimitWindowTitle {
         let safeMinutes = max(0, minutes)
 
         if safeMinutes == 10_080 {
-            return "WEEK"
+            return L10n.tr("WEEK")
         }
 
+        if L10n.language != "en" {
+            if safeMinutes > 0, safeMinutes.isMultiple(of: 10_080) {
+                return L10n.duration(safeMinutes / 10_080, unit: .weekOfMonth, full: true).uppercased(with: L10n.locale)
+            }
+            if safeMinutes > 0, safeMinutes.isMultiple(of: 1_440) {
+                return L10n.duration(safeMinutes / 1_440, unit: .day, full: true).uppercased(with: L10n.locale)
+            }
+            if safeMinutes > 0, safeMinutes.isMultiple(of: 60) {
+                return L10n.duration(safeMinutes / 60, unit: .hour, full: true).uppercased(with: L10n.locale)
+            }
+            return L10n.duration(safeMinutes, unit: .minute, full: true).uppercased(with: L10n.locale)
+        }
         if safeMinutes > 0, safeMinutes.isMultiple(of: 10_080) {
             let weeks = safeMinutes / 10_080
             return "\(weeks) \(unit(weeks, singular: "week", plural: "weeks"))"

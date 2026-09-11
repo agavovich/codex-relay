@@ -154,7 +154,8 @@ enum HUDMetrics {
     static let baseHeight: CGFloat = 52
     static let baseCornerRadius: CGFloat = 15
     static let sectionInset: CGFloat = 12
-    static let brandWidth: CGFloat = 50
+    // Reserve space for the full tier label (e.g. PRO ×20) beside the icon.
+    static let brandWidth: CGFloat = 66
     static let singleWindowWidth: CGFloat = 121
     static let multiWindowWidth: CGFloat = 108
     static let brandSectionWidth = brandWidth + sectionInset * 2
@@ -189,6 +190,7 @@ private enum HUDPopover: Equatable {
 }
 
 struct HUDView: View {
+    @Environment(\.locale) private var interfaceLocale
     @ObservedObject var store: LimitStore
     @ObservedObject var presentationState: HUDPresentationState
     let dragHandler: HUDWindowDragHandler
@@ -226,6 +228,8 @@ struct HUDView: View {
 
             hudSurface(size: size, cornerRadius: cornerRadius)
         }
+        .environment(\.locale, L10n.locale)
+        .environment(\.layoutDirection, L10n.direction)
         .contentShape(Rectangle())
         .onTapGesture {
             if !isEdgeStrip {
@@ -241,6 +245,9 @@ struct HUDView: View {
                     dragHandler.end()
                 }
         )
+        .onAppear {
+            if CommandLine.arguments.contains("--settings-preview") { activePopover = .settings }
+        }
         .onChange(of: activePopover) { popover in
             presentationState.setPopoverPresented(popover != nil)
             if popover != nil {
@@ -371,7 +378,7 @@ struct HUDView: View {
                     window: store.snapshot?.preferredHUDWindow,
                     hasError: store.errorMessage != nil
                 )
-                .help("Manage accounts")
+                .help(L10n.tr("Manage accounts"))
                 .transition(.opacity)
             }
         }
@@ -396,12 +403,12 @@ struct HUDView: View {
                 )
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Limit details")
+            .accessibilityLabel(L10n.tr("Limit details"))
             .popover(isPresented: popoverBinding(.limits), arrowEdge: .trailing) {
                 EdgeLimitDetailsView(store: store)
             }
 
-            edgeQuickButton("person.2.fill", label: "Accounts") {
+            edgeQuickButton("person.2.fill", label: L10n.tr("Accounts")) {
                 openAccounts()
             }
             .popover(isPresented: popoverBinding(.accounts), arrowEdge: .trailing) {
@@ -410,7 +417,7 @@ struct HUDView: View {
                 }
             }
 
-            edgeQuickButton("gearshape.fill", label: "Settings") {
+            edgeQuickButton("gearshape.fill", label: L10n.tr("Settings")) {
                 openSettings()
             }
             .popover(isPresented: popoverBinding(.settings), arrowEdge: .trailing) {
@@ -571,7 +578,7 @@ struct HUDView: View {
             }
         }
         .contentShape(Rectangle())
-        .help("Manage accounts")
+        .help(L10n.tr("Manage accounts"))
     }
 
     private var separator: some View {
@@ -583,10 +590,10 @@ struct HUDView: View {
     @ViewBuilder
     private var loadingState: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(store.errorMessage == nil ? "Reading limits…" : "No data")
+            Text(store.errorMessage == nil ? L10n.tr("Reading limits…") : L10n.tr("No data"))
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
 
-            Text(store.errorMessage ?? "Connecting to Codex")
+            Text(store.errorMessage ?? L10n.tr("Connecting to Codex"))
                 .font(.system(size: 8.5))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -596,10 +603,10 @@ struct HUDView: View {
 
     private var emptyWindowState: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text("No limits reported")
+            Text(L10n.tr("No limits reported"))
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
 
-            Text("Codex returned no active windows")
+            Text(L10n.tr("Codex returned no active windows"))
                 .font(.system(size: 8.5))
                 .foregroundStyle(.secondary)
         }
@@ -608,6 +615,7 @@ struct HUDView: View {
 }
 
 struct EdgeStripView: View {
+    @Environment(\.locale) private var interfaceLocale
     @ObservedObject var store: LimitStore
     @ObservedObject var presentationState: HUDPresentationState
     let dragHandler: HUDWindowDragHandler
@@ -635,6 +643,7 @@ struct EdgeStripView: View {
 }
 
 private struct EdgeStripIndicator: View {
+    @Environment(\.locale) private var interfaceLocale
     let window: RateLimitWindow?
     let hasError: Bool
 
@@ -657,8 +666,8 @@ private struct EdgeStripIndicator: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(
                 window.map {
-                    "\($0.displayTitle), \(Int($0.remainingPercent.rounded())) percent remaining"
-                } ?? "Codex limits unavailable"
+                    L10n.tr("\($0.displayTitle), \(Int($0.remainingPercent.rounded())) percent remaining")
+                } ?? L10n.tr("Codex limits unavailable")
             )
     }
 
@@ -672,6 +681,7 @@ private struct EdgeStripIndicator: View {
 }
 
 private struct EdgeLimitOrb: View {
+    @Environment(\.locale) private var interfaceLocale
     let window: RateLimitWindow?
     let hasError: Bool
 
@@ -720,15 +730,16 @@ private struct EdgeLimitOrb: View {
         }
         .frame(width: 48, height: 48)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(window?.displayTitle ?? "Codex limit")
+        .accessibilityLabel(window?.displayTitle ?? L10n.tr("Codex limit"))
         .accessibilityValue(
-            window.map { "\(Int($0.remainingPercent.rounded())) percent remaining" }
+            window.map { L10n.tr("\(Int($0.remainingPercent.rounded())) percent remaining") }
                 ?? "Unavailable"
         )
     }
 }
 
 private struct EdgeLimitDetailsView: View {
+    @Environment(\.locale) private var interfaceLocale
     @ObservedObject var store: LimitStore
 
     private var windows: [RateLimitWindow] {
@@ -776,6 +787,10 @@ private struct EdgeLimitDetailsView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
+
+                    if let period = store.profileStates[store.activeProfile.id]?.subscriptionPeriod {
+                        SubscriptionPeriodLabel(period: period, now: store.now)
+                    }
                 }
 
                 Spacer(minLength: 6)
@@ -789,13 +804,13 @@ private struct EdgeLimitDetailsView: View {
                 }
                 .buttonStyle(.borderless)
                 .disabled(store.isRefreshing)
-                .help("Refresh limits")
+                .help(L10n.tr("Refresh limits"))
             }
 
             Divider()
 
             if windows.isEmpty {
-                Text(store.errorMessage ?? "No active limits reported")
+                Text(store.errorMessage ?? L10n.tr("No active limits reported"))
                     .font(.system(size: 10))
                     .foregroundStyle(store.errorMessage == nil ? Color.secondary : Color.red)
                     .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
@@ -811,7 +826,7 @@ private struct EdgeLimitDetailsView: View {
 
             HStack(spacing: 6) {
                 Image(systemName: "arrow.counterclockwise.circle")
-                Text("RESET CREDITS")
+                Text(L10n.tr("RESET CREDITS"))
                 Spacer()
                 Text("\(store.resetCreditCount)")
                     .foregroundStyle(store.resetCreditCount > 0 ? .mint : .secondary)
@@ -820,11 +835,12 @@ private struct EdgeLimitDetailsView: View {
             .foregroundStyle(.secondary)
         }
         .padding(13)
-        .frame(width: 290)
+        .frame(width: L10n.language == "en" ? 290 : 350)
     }
 }
 
 private struct EdgeLimitDetailRow: View {
+    @Environment(\.locale) private var interfaceLocale
     let window: RateLimitWindow
     let now: Date
 
@@ -862,12 +878,10 @@ private struct EdgeLimitDetailRow: View {
 
             HStack(spacing: 4) {
                 Image(systemName: "arrow.clockwise")
-                Text("Resets in \(RateLimitCountdown.text(until: window.resetsAt, now: now))")
+                Text(L10n.tr("Resets in \(RateLimitCountdown.text(until: window.resetsAt, now: now))"))
                 Spacer(minLength: 5)
                 if let resetsAt = window.resetsAt {
-                    Text(Date(timeIntervalSince1970: resetsAt).formatted(
-                        .dateTime.month(.abbreviated).day().hour().minute()
-                    ))
+                    Text(L10n.date(Date(timeIntervalSince1970: resetsAt), includeTime: true))
                 }
             }
             .font(.system(size: 8, weight: .medium, design: .rounded))
@@ -884,6 +898,7 @@ private struct EdgeLimitDetailRow: View {
 }
 
 private struct CollapsedLimitView: View {
+    @Environment(\.locale) private var interfaceLocale
     let window: RateLimitWindow?
     let hasError: Bool
 
@@ -942,9 +957,9 @@ private struct CollapsedLimitView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(.easeInOut(duration: 0.25), value: remaining)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(window?.displayTitle ?? "Codex limit")
+            .accessibilityLabel(window?.displayTitle ?? L10n.tr("Codex limit"))
             .accessibilityValue(
-                window.map { "\(Int($0.remainingPercent.rounded())) percent remaining" }
+                window.map { L10n.tr("\(Int($0.remainingPercent.rounded())) percent remaining") }
                     ?? "Unavailable"
             )
         }
@@ -971,6 +986,7 @@ private struct CodexTerminalGlyph: Shape {
 }
 
 private struct LimitCell: View {
+    @Environment(\.locale) private var interfaceLocale
     let window: RateLimitWindow
     let now: Date
     let width: CGFloat

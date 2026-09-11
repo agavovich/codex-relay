@@ -8,11 +8,11 @@ enum AccountProfileStoreError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .cannotRemovePrimary:
-            return "The primary account cannot be removed."
+            return L10n.tr("The primary account cannot be removed.")
         case .cannotRemoveActive:
-            return "Switch Codex to another account before removing this profile."
+            return L10n.tr("Switch Codex to another account before removing this profile.")
         case .invalidProfileDirectory:
-            return "The profile directory is outside the protected account vault."
+            return L10n.tr("The profile directory is outside the protected account vault.")
         }
     }
 }

@@ -77,11 +77,11 @@ final class UpdateChecker: ObservableObject {
         var errorDescription: String? {
             switch self {
             case .invalidResponse:
-                return "GitHub returned an invalid release response."
+                return L10n.tr("GitHub returned an invalid release response.")
             case .invalidReleaseURL:
-                return "GitHub returned an invalid release link."
+                return L10n.tr("GitHub returned an invalid release link.")
             case .requestFailed(let statusCode):
-                return "GitHub returned HTTP \(statusCode). Please try again later."
+                return L10n.tr("GitHub returned HTTP \(statusCode). Please try again later.")
             }
         }
     }
@@ -168,27 +168,27 @@ final class UpdateChecker: ObservableObject {
             return
 
         case .upToDate(let latestVersion):
-            alert.messageText = "Codex Relay is up to date"
+            alert.messageText = L10n.tr("Codex Relay is up to date")
             alert.informativeText = currentVersion == latestVersion
-                ? "You’re running the latest version, \(currentVersion)."
-                : "Installed: \(currentVersion). Latest public release: \(latestVersion)."
-            alert.addButton(withTitle: "OK")
+                ? L10n.tr("You’re running the latest version, \(currentVersion).")
+                : L10n.tr("Installed: \(currentVersion). Latest public release: \(latestVersion).")
+            alert.addButton(withTitle: L10n.tr("OK"))
 
         case .updateAvailable(let release):
-            alert.messageText = "Codex Relay \(release.version) is available"
+            alert.messageText = L10n.tr("Codex Relay \(release.version) is available")
             let notes = release.notes?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .prefix(600)
             alert.informativeText = notes.map(String.init)
-                ?? "You’re currently running version \(currentVersion)."
-            alert.addButton(withTitle: "Open Release")
-            alert.addButton(withTitle: "Later")
+                ?? L10n.tr("You’re currently running version \(currentVersion).")
+            alert.addButton(withTitle: L10n.tr("Open Release"))
+            alert.addButton(withTitle: L10n.tr("Later"))
 
         case .failed(let message):
             alert.alertStyle = .warning
-            alert.messageText = "Couldn’t check for updates"
+            alert.messageText = L10n.tr("Couldn’t check for updates")
             alert.informativeText = message
-            alert.addButton(withTitle: "OK")
+            alert.addButton(withTitle: L10n.tr("OK"))
         }
 
         NSApplication.shared.activate(ignoringOtherApps: true)

@@ -12,9 +12,9 @@ enum HUDStyle: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .compact: return "Compact"
-        case .expanded: return "Expanded"
-        case .edgeStrip: return "Edge Strip"
+        case .compact: return L10n.tr("Compact")
+        case .expanded: return L10n.tr("Expanded")
+        case .edgeStrip: return L10n.tr("Edge Strip")
         }
     }
 }
@@ -28,9 +28,9 @@ enum HUDPlacement: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .dock: return "Beside Dock"
-        case .rightEdge: return "Right Edge"
-        case .free: return "Free"
+        case .dock: return L10n.tr("Beside Dock")
+        case .rightEdge: return L10n.tr("Right Edge")
+        case .free: return L10n.tr("Free")
         }
     }
 }
@@ -80,6 +80,13 @@ final class AppSettings: ObservableObject {
     static let refreshIntervals: [TimeInterval] = [30, 60, 120, 300]
     static let lowLimitThresholds = [5, 10, 20]
 
+    @Published var language: String {
+        didSet {
+            defaults.set(language, forKey: "interfaceLanguage")
+            L10n.configure(language)
+        }
+    }
+
     @Published var maskEmails: Bool {
         didSet { defaults.set(maskEmails, forKey: Key.maskEmails) }
     }
@@ -117,6 +124,7 @@ final class AppSettings: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        language = defaults.string(forKey: "interfaceLanguage") ?? "system"
         Self.migrateLegacyDefaultsIfNeeded(in: defaults)
 
         let storedStyle = defaults.string(forKey: Key.hudStyle).flatMap(HUDStyle.init(rawValue:))
@@ -172,6 +180,7 @@ final class AppSettings: ObservableObject {
         activeTaskDetection = defaults.bool(forKey: Key.activeTaskDetection)
         launchAtLogin = SMAppService.mainApp.status == .enabled
         persistHUDConfiguration()
+        if defaults === UserDefaults.standard { L10n.configure(language) }
     }
 
     private static func migrateLegacyDefaultsIfNeeded(in defaults: UserDefaults) {
@@ -202,7 +211,11 @@ final class AppSettings: ObservableObject {
             previousHUDPlacement = hudPlacement
             hudPlacement = .rightEdge
         } else if hudStyle == .edgeStrip {
-            hudPlacement = previousHUDPlacement
+            // The strip's right-edge position belongs only to that style.
+            // Returning to a standard HUD starts beside the Dock; Free
+            // placement remains available as an explicit settings choice.
+            hudPlacement = .dock
+            previousHUDPlacement = .dock
         }
 
         hudStyle = style

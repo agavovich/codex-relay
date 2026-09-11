@@ -14,21 +14,21 @@ enum CodexDesktopError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .applicationNotFound:
-            return "The Codex desktop app could not be found."
+            return L10n.tr("The Codex desktop app could not be found.")
         case .profileHomeMissing(let path):
-            return "The selected Codex profile is missing: \(path)"
+            return L10n.tr("The selected Codex profile is missing: \(path)")
         case .credentialMissing(let path):
-            return "This account needs to be signed in again before switching: \(path)"
+            return L10n.tr("This account needs to be signed in again before switching: \(path)")
         case .credentialSwapFailed(let message):
-            return "The Codex account could not be prepared safely: \(message)"
+            return L10n.tr("The Codex account could not be prepared safely: \(message)")
         case .quitRejected:
-            return "Codex did not accept the restart request. Finish any open dialog and try again."
+            return L10n.tr("Codex did not accept the restart request. Finish any open dialog and try again.")
         case .quitTimedOut:
-            return "Codex is still closing. Finish any active prompt and try again."
+            return L10n.tr("Codex is still closing. Finish any active prompt and try again.")
         case .relaunchFailed(let message):
-            return "Codex could not be reopened: \(message)"
+            return L10n.tr("Codex could not be reopened: \(message)")
         case .relaunchTimedOut:
-            return "Codex did not reopen in time."
+            return L10n.tr("Codex did not reopen in time.")
         }
     }
 }
@@ -273,7 +273,7 @@ final class CodexDesktopController {
 
         guard launcher.terminationStatus == 0 else {
             throw CodexDesktopError.relaunchFailed(
-                "the system launcher exited with status \(launcher.terminationStatus)"
+                L10n.tr("the system launcher exited with status \(launcher.terminationStatus)")
             )
         }
 

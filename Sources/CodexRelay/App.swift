@@ -24,10 +24,12 @@ enum CodexRelayMain {
 
     @MainActor
     private static func runSelfTest() {
+        L10n.configure("en")
         let failures = RateLimitWindowSelfTest.run()
             + AccountManagementSelfTest.run()
             + UpdateCheckerSelfTest.run()
             + MenuBarIconSelfTest.run()
+            + LocalizationSelfTest.run()
         if failures.isEmpty {
             print("Codex Relay self-test: passed")
             exit(EXIT_SUCCESS)
@@ -78,9 +80,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApplication.shared.activate(ignoringOtherApps: true)
         }
 
+        NotificationCenter.default.addObserver(self, selector: #selector(languageChanged), name: L10n.changed, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(languageChanged), name: NSLocale.currentLocaleDidChangeNotification, object: nil)
         configureStatusItem()
         panelController.show()
-        if CommandLine.arguments.contains("--expanded-preview") {
+        if CommandLine.arguments.contains("--expanded-preview") || CommandLine.arguments.contains("--settings-preview") {
             panelController.showExpandedPreview()
         }
     }
@@ -89,22 +93,27 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    @objc private func languageChanged() {
+        configureStatusItem()
+        store?.objectWillChange.send()
+    }
+
     private func configureStatusItem() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        let item = statusItem ?? NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = MenuBarIcon.make()
         item.button?.toolTip = "Codex Relay"
 
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Accounts…", action: #selector(showAccounts), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Show / Hide", action: #selector(togglePanel), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Refresh Now", action: #selector(refresh), keyEquivalent: "r"))
+        menu.addItem(NSMenuItem(title: L10n.tr("Accounts…"), action: #selector(showAccounts), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: L10n.tr("Show / Hide"), action: #selector(togglePanel), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: L10n.tr("Refresh Now"), action: #selector(refresh), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(
-            title: "Check for Updates…",
+            title: L10n.tr("Check for Updates…"),
             action: #selector(checkForUpdates),
             keyEquivalent: ""
         ))
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit Codex Relay", action: #selector(quit), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: L10n.tr("Quit Codex Relay"), action: #selector(quit), keyEquivalent: "q"))
 
         menu.items.forEach { $0.target = self }
         item.menu = menu

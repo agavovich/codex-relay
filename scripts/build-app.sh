@@ -16,6 +16,7 @@ swift build -c release
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "$PROJECT_DIR/.build/release/CodexRelay" "$APP_DIR/Contents/MacOS/CodexRelay"
+cp -R "$PROJECT_DIR/.build/release/CodexRelay_CodexRelay.bundle" "$APP_DIR/Contents/Resources/"
 cp "$PROJECT_DIR/Resources/Info.plist" "$APP_DIR/Contents/Info.plist"
 
 swift "$PROJECT_DIR/scripts/generate-app-icon.swift" "$ICONSET_DIR" >/dev/null

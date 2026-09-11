@@ -15,31 +15,31 @@ enum CodexClientError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .executableNotFound:
-            return "Codex executable not found. Install or launch ChatGPT/Codex."
+            return L10n.tr("Codex executable not found. Install or launch ChatGPT/Codex.")
         case .profileHomeMissing(let path):
-            return "Codex profile directory not found: \(path)"
+            return L10n.tr("Codex profile directory not found: \(path)")
         case .launchFailed(let message):
-            return "Could not launch Codex: \(message)"
+            return L10n.tr("Could not launch Codex: \(message)")
         case .timedOut:
-            return "Codex did not respond in time."
+            return L10n.tr("Codex did not respond in time.")
         case .loginRequiresIsolatedProfile:
-            return "Additional accounts require an isolated Codex profile."
+            return L10n.tr("Additional accounts require an isolated Codex profile.")
         case .invalidLoginURL:
-            return "Codex returned an invalid sign-in URL."
+            return L10n.tr("Codex returned an invalid sign-in URL.")
         case .loginFailed(let message):
-            return message.isEmpty ? "ChatGPT sign-in failed." : "ChatGPT sign-in failed: \(message)"
+            return message.isEmpty ? L10n.tr("ChatGPT sign-in failed.") : L10n.tr("ChatGPT sign-in failed: \(message)")
         case .malformedResponse:
-            return "Codex returned an unknown response format."
+            return L10n.tr("Codex returned an unknown response format.")
         case .server(let message):
-            return "Codex: \(message)"
+            return L10n.tr("Codex: \(message)")
         case .exited(let message):
-            return message.isEmpty ? "Codex exited before returning rate limits." : message
+            return message.isEmpty ? L10n.tr("Codex exited before returning rate limits.") : message
         }
     }
 }
 
 final class CodexAppServerClient {
-    private static let fallbackVersion = "0.7.1"
+    private static let fallbackVersion = "0.7.2"
     private let fileManager = FileManager.default
 
     private var clientVersion: String {
@@ -290,7 +290,7 @@ final class CodexAppServerClient {
                     if let responseID = object["id"] as? NSNumber,
                        responseID.intValue == 1 {
                         if let error = object["error"] as? [String: Any] {
-                            let message = error["message"] as? String ?? "Unknown server error"
+                            let message = error["message"] as? String ?? L10n.tr("Unknown server error")
                             failLocked(CodexClientError.server(message))
                             continue
                         }

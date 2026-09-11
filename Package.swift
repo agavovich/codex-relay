@@ -13,7 +13,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "CodexRelay",
-            path: "Sources/CodexRelay"
+            path: "Sources/CodexRelay",
+            resources: [.process("Resources")]
         )
     ],
     swiftLanguageVersions: [.v5]

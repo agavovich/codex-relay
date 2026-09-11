@@ -5,6 +5,7 @@ import Foundation
 struct ProfileLimitState: Equatable {
     var snapshot: RateLimitSnapshot?
     var resetCreditCount = 0
+    var subscriptionPeriod: SubscriptionPeriod? = nil
     var account: CodexAccountInfo?
     var planType: String?
     var errorMessage: String?
@@ -75,7 +76,7 @@ private enum AccountSwitchError: LocalizedError {
     case limitUnavailable
 
     var errorDescription: String? {
-        "This account is still out of limits. Wait for its blocking window to reset."
+        L10n.tr("This account is still out of limits. Wait for its blocking window to reset.")
     }
 }
 
@@ -378,7 +379,7 @@ final class LimitStore: ObservableObject {
                     try await desktopController.signOut(profile: profile)
                 }
                 try profileStore.signOut(profileID)
-                profileStates[profileID] = ProfileLimitState(errorMessage: "Signed out")
+                profileStates[profileID] = ProfileLimitState(errorMessage: L10n.tr("Signed out"))
                 if reauthenticatedProfileID == profileID {
                     reauthenticatedProfileID = nil
                 }
@@ -403,7 +404,7 @@ final class LimitStore: ObservableObject {
         loginProfileID = profile.id
         loginErrorMessage = nil
         profileStates[profile.id] = ProfileLimitState(
-            errorMessage: "Waiting for ChatGPT sign-in…"
+            errorMessage: L10n.tr("Waiting for ChatGPT sign-in…")
         )
 
         let client = self.client
@@ -488,6 +489,7 @@ final class LimitStore: ObservableObject {
         profileStates[profile.id] = ProfileLimitState(
             snapshot: codexLimit,
             resetCreditCount: result.rateLimits.rateLimitResetCredits?.availableCount ?? 0,
+            subscriptionPeriod: SubscriptionPeriod.read(for: profile),
             account: result.account,
             planType: resolvedPlanType,
             errorMessage: nil,
@@ -582,11 +584,11 @@ final class LimitStore: ObservableObject {
         if promptKey.isReady, settings.notificationsEnabled {
             let profileName = profileStore.profiles
                 .first(where: { $0.id == recommendation.profileID })
-                .map(notificationProfileName) ?? "Another account"
+                .map(notificationProfileName) ?? L10n.tr("Another account")
             notificationService.send(
                 identifier: "recommendation-\(activeProfileID)-\(recommendation.profileID)",
-                title: "Codex limit exhausted",
-                body: "\(profileName) is available now. Open the HUD to switch.",
+                title: L10n.tr("Codex limit exhausted"),
+                body: L10n.tr("\(profileName) is available now. Open the HUD to switch."),
                 destination: .accounts
             )
         }
@@ -610,8 +612,8 @@ final class LimitStore: ObservableObject {
                     notifiedLowLimitKeys.insert(key)
                     notificationService.send(
                         identifier: "low-\(key)-\(Int(window.resetsAt ?? 0))",
-                        title: "Codex limit is running low",
-                        body: "\(window.displayTitle) has \(Int(remaining.rounded()))% remaining.",
+                        title: L10n.tr("Codex limit is running low"),
+                        body: L10n.tr("\(window.displayTitle) has \(Int(remaining.rounded()))% remaining."),
                         destination: .limits
                     )
                 }
@@ -627,15 +629,15 @@ final class LimitStore: ObservableObject {
                 .filter(\.isExhausted)
                 .map(\.displayTitle)
             let limitName = exhaustedWindows.isEmpty
-                ? "The active Codex limit"
-                : exhaustedWindows.joined(separator: " and ")
+                ? L10n.tr("The active Codex limit")
+                : L10n.list(exhaustedWindows)
             let resetToken = currentSnapshot.displayWindows
                 .compactMap(\.resetsAt)
                 .max() ?? Date().timeIntervalSince1970
             notificationService.send(
                 identifier: "exhausted-\(profile.id)-\(Int(resetToken))",
-                title: "Codex limit exhausted",
-                body: "\(limitName) is exhausted. Open Accounts to choose what to use next.",
+                title: L10n.tr("Codex limit exhausted"),
+                body: L10n.tr("\(limitName) is exhausted. Open Accounts to choose what to use next."),
                 destination: .accounts
             )
         }
@@ -645,8 +647,8 @@ final class LimitStore: ObservableObject {
            !currentSnapshot.isExhausted {
             notificationService.send(
                 identifier: "reset-\(profile.id)-\(Int(Date().timeIntervalSince1970))",
-                title: "Codex limit restored",
-                body: "\(notificationProfileName(profile)) is available again.",
+                title: L10n.tr("Codex limit restored"),
+                body: L10n.tr("\(notificationProfileName(profile)) is available again."),
                 destination: .accounts
             )
         }
